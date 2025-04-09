@@ -6,8 +6,6 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferByte;
-import java.util.Base64;
 import java.util.Collections;
 
 import static cn.lunadeer.lagrangeMC.utils.Misc.imageToBase64;

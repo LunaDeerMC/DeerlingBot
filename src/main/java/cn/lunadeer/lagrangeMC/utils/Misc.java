@@ -1,6 +1,5 @@
 package cn.lunadeer.lagrangeMC.utils;
 
-import cn.lunadeer.lagrangeMC.commands.BotCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.imageio.ImageIO;
@@ -8,7 +7,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Base64;
