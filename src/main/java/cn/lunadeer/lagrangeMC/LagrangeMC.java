@@ -38,9 +38,9 @@ public final class LagrangeMC extends JavaPlugin {
         XLogger.info(" | |     __ _  __ _ _ __ __ _ _ __   __ _  ___| \\  / | |");
         XLogger.info(" | |    / _` |/ _` | '__/ _` | '_ \\ / _` |/ _ \\ |\\/| | |");
         XLogger.info(" | |___| (_| | (_| | | | (_| | | | | (_| |  __/ |  | | |____");
-        XLogger.info(" |______\\__,_|\\__, |_|  \\__,_|_| |_|\\__, |\\___|_|  |_|\\_____|\n" +
-                "               __/ |                 __/ |\n" +
-                "              |___/                 |___/\n");
+        XLogger.info(" |______\\__,_|\\__, |_|  \\__,_|_| |_|\\__, |\\___|_|  |_|\\_____|");
+        XLogger.info("               __/ |                 __/ |");
+        XLogger.info("              |___/                 |___/");
         new DatabaseManager(this,
                 Configuration.database.type, Configuration.database.host,
                 Configuration.database.port, Configuration.database.database, Configuration.database.username,
