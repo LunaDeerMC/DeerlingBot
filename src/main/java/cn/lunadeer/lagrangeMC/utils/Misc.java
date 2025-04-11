@@ -91,4 +91,19 @@ public class Misc {
         }
         return sb.toString();
     }
+
+    public static void saveDefaultResource(JavaPlugin plugin, String resourcePath, boolean replace) {
+        File file = new File(plugin.getDataFolder(), resourcePath);
+        if (file.exists() && !replace) {
+            return;
+        }
+        try {
+            if (!file.getParentFile().exists()) {
+                boolean re = file.getParentFile().mkdirs();
+            }
+            plugin.saveResource(resourcePath, replace);
+        } catch (Exception e) {
+            XLogger.error(e);
+        }
+    }
 }

@@ -11,7 +11,7 @@ libraries += "mysql:mysql-connector-java:8.0.33"
 libraries += "net.kyori:adventure-platform-bukkit:4.3.3"
 libraries += "com.zaxxer:HikariCP:6.2.1"
 libraries += "com.alibaba:fastjson:2.0.31"
-
+libraries += "org.seleniumhq.selenium:selenium-java:4.9.0"
 
 group = "cn.lunadeer"
 version = "1.0-alpha.1"

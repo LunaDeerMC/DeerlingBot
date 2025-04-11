@@ -49,6 +49,7 @@ public final class LagrangeMC extends JavaPlugin {
         new CommandManager(this);
         new BindManager(this);
         new MessageManager(this);
+        new WebDriverManager(this);
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new PlaceHolderApiManager(this);
         }
@@ -66,6 +67,7 @@ public final class LagrangeMC extends JavaPlugin {
         // Plugin shutdown logic
         DatabaseManager.instance.close();
         CoreConnector.getInstance().close();
+        WebDriverManager.getInstance().close();
     }
 
     public static LagrangeMC getInstance() {

@@ -7,6 +7,7 @@ import cn.lunadeer.lagrangeMC.tables.WhitelistTable;
 import cn.lunadeer.lagrangeMC.utils.Notification;
 import cn.lunadeer.lagrangeMC.utils.XLogger;
 import cn.lunadeer.lagrangeMC.utils.configuration.ConfigurationPart;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -58,7 +59,8 @@ public class MessageManager implements Listener {
         message = message.substring(Configuration.messageTransfer.serverFlag.length());
         message = Configuration.messageTransfer.serverPrefix + message;
         message = message.replace("%player_name%", event.getPlayer().getName());
-        message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
+            message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
         GroupOperation.SendGroupMessage(Long.parseLong(Configuration.messageTransfer.groupId), message);
     }
 

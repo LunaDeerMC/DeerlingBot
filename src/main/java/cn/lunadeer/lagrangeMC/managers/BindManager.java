@@ -34,7 +34,7 @@ public class BindManager implements Listener {
 
     public boolean bind(long userId, String code) {
         try {
-            if (WhitelistTable.getInstance().isCodeAvailable(code)) {
+            if (WhitelistTable.getInstance().isCodeAvailable(code.toUpperCase())) {
                 WhitelistTable.getInstance().setBind(code, userId);
                 return true;
             } else {

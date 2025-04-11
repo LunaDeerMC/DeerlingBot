@@ -4,6 +4,7 @@ import cn.lunadeer.lagrangeMC.configuration.Configuration;
 import cn.lunadeer.lagrangeMC.configuration.MessageText;
 import cn.lunadeer.lagrangeMC.managers.BindManager;
 import cn.lunadeer.lagrangeMC.protocols.GroupOperation;
+import cn.lunadeer.lagrangeMC.protocols.PrivateOperation;
 import cn.lunadeer.lagrangeMC.tables.WhitelistTable;
 import cn.lunadeer.lagrangeMC.utils.XLogger;
 import cn.lunadeer.lagrangeMC.utils.configuration.ConfigurationPart;
@@ -28,15 +29,17 @@ public class BindPlayer extends BotCommand {
 
     @Override
     public void handle(long userID, String commandText, JSONObject jsonObject) {
-        if (!jsonObject.containsKey("group_id")) return;
-        long groupID = jsonObject.getLong("group_id");
+        Long groupID = jsonObject.getLong("group_id");
 
         if (!jsonObject.containsKey("message_id")) return;
         long messageID = jsonObject.getLong("message_id");
 
         String[] commandTextSplit = commandText.split(" ");
         if (commandTextSplit.length != 2) {
-            GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
+            if (groupID != null)
+                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
+            else
+                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
             return;
         }
         String code = commandTextSplit[1];
@@ -44,7 +47,10 @@ public class BindPlayer extends BotCommand {
         try {
             if (WhitelistTable.getInstance().isBind(userID)) {
                 XLogger.debug("User {0} is already verified", userID);
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.alreadyBind));
+                if (groupID != null)
+                    GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.alreadyBind));
+                else
+                    PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.alreadyBind));
                 return;
             }
         } catch (Exception e) {
@@ -53,9 +59,15 @@ public class BindPlayer extends BotCommand {
         }
 
         if (BindManager.getInstance().bind(userID, code)) {
-            GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindSuccess));
+            if (groupID != null)
+                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindSuccess));
+            else
+                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindSuccess));
         } else {
-            GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindFailed));
+            if (groupID != null)
+                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindFailed));
+            else
+                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindFailed));
         }
     }
 }
