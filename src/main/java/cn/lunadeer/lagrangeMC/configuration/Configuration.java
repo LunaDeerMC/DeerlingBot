@@ -37,6 +37,13 @@ public class Configuration extends ConfigurationFile {
     public static String commandPrefix = "/";
 
     @Comments({
+            "是否使用支持图片返回结果的指令",
+            "启用后部分指令（如info）会返回美观的图片结果",
+            "此特性需要手动下载额外的包并正确配置环境",
+    })
+    public static boolean fancyCommand = false;
+
+    @Comments({
             "机器人接收指令的群聊列表",
             "仅以下群聊的指令会被机器人识别并执行"
     })

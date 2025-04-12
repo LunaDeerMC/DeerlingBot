@@ -1,6 +1,7 @@
 package cn.lunadeer.lagrangeMC.managers;
 
 import cn.lunadeer.lagrangeMC.commands.BotCommand;
+import cn.lunadeer.lagrangeMC.commands.FancyCommand;
 import cn.lunadeer.lagrangeMC.configuration.Configuration;
 import cn.lunadeer.lagrangeMC.utils.XLogger;
 import com.alibaba.fastjson2.JSONObject;
@@ -50,6 +51,10 @@ public class CommandManager {
             try {
                 Class<?> clazz = Class.forName(className);
                 if (BotCommand.class.isAssignableFrom(clazz) && !Modifier.isInterface(clazz.getModifiers()) && !Modifier.isAbstract(clazz.getModifiers())) {
+                    if (clazz.isAnnotationPresent(FancyCommand.class) && !Configuration.fancyCommand) {
+                        XLogger.debug("Fancy command {0} is disabled", className);
+                        continue;
+                    }
                     BotCommand command = (BotCommand) clazz.getDeclaredConstructor().newInstance();
                     commands.add(command);
                     XLogger.debug("Registered command: {0}", command.getCommand());

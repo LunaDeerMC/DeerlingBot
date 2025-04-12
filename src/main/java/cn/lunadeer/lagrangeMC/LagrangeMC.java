@@ -1,6 +1,7 @@
 package cn.lunadeer.lagrangeMC;
 
 import cn.lunadeer.lagrangeMC.configuration.Configuration;
+import cn.lunadeer.lagrangeMC.configuration.MessageText;
 import cn.lunadeer.lagrangeMC.managers.*;
 import cn.lunadeer.lagrangeMC.tables.WhitelistTable;
 import cn.lunadeer.lagrangeMC.utils.Notification;
@@ -27,6 +28,7 @@ public final class LagrangeMC extends JavaPlugin {
         new XLogger(this);
         try {
             ConfigurationManager.load(Configuration.class, new File(getDataFolder(), "config.yml"));
+            ConfigurationManager.load(MessageText.class, new File(getDataFolder(), "messages.yml"));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -41,6 +43,7 @@ public final class LagrangeMC extends JavaPlugin {
         XLogger.info(" |______\\__,_|\\__, |_|  \\__,_|_| |_|\\__, |\\___|_|  |_|\\_____|");
         XLogger.info("               __/ |                 __/ |");
         XLogger.info("              |___/                 |___/");
+        new ResourceDownloader(this);
         new DatabaseManager(this,
                 Configuration.database.type, Configuration.database.host,
                 Configuration.database.port, Configuration.database.database, Configuration.database.username,

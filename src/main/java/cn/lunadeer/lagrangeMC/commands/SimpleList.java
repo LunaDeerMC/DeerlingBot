@@ -15,13 +15,13 @@ import static cn.lunadeer.lagrangeMC.protocols.MessageSegment.ReplySegment;
 import static cn.lunadeer.lagrangeMC.protocols.MessageSegment.TextSegment;
 import static cn.lunadeer.lagrangeMC.utils.Misc.formatString;
 
-public class ListPlayer extends BotCommand {
+public class SimpleList extends BotCommand {
 
     public static class ListPlayerText extends ConfigurationPart {
         public String listPlayer = "当前有 {0} 名玩家在线：\n";
     }
 
-    public ListPlayer() {
+    public SimpleList() {
         super("list", "列出当前在线的玩家", false, false, true);
     }
 

@@ -106,4 +106,27 @@ public class Misc {
             XLogger.error(e);
         }
     }
+
+    public static String distanceConverter(int cm) {
+        if (cm < 100) {
+            return cm + "cm";
+        } else if (cm < 100000) {
+            return String.format("%.2f", cm / 100.0) + " m";
+        } else if (cm < 100000000) {
+            return String.format("%.2f", cm / 100000.0) + " km";
+        } else {
+            return String.format("%.2f", cm / 100000000.0) + " 万km";
+        }
+    }
+
+    public static String timeConverter(int tick) {
+        int min = tick / 1200;
+        if (min < 60) {
+            return min + "分钟";
+        } else if (min < 1440) {
+            return String.format("%.2f", min / 60.0) + " 小时";
+        } else {
+            return String.format("%.2f", min / 1440.0) + " 天";
+        }
+    }
 }

@@ -10,18 +10,22 @@ import cn.lunadeer.lagrangeMC.utils.XLogger;
 import com.alibaba.fastjson2.JSONObject;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Statistic;
 import org.bukkit.entity.Player;
 
 import java.awt.image.BufferedImage;
 import java.util.UUID;
 
 import static cn.lunadeer.lagrangeMC.protocols.MessageSegment.*;
+import static cn.lunadeer.lagrangeMC.utils.Misc.distanceConverter;
+import static cn.lunadeer.lagrangeMC.utils.Misc.timeConverter;
 
-public class PlayerInfo extends BotCommand {
+@FancyCommand
+public class FancyInfo extends BotCommand {
 
     private final String template = "user_info";
 
-    public PlayerInfo() {
+    public FancyInfo() {
         super("info", "查看个人信息", false, false, true);
     }
 
@@ -49,13 +53,17 @@ public class PlayerInfo extends BotCommand {
 
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
+
         if (!jsonObject.containsKey("message_id")) return;
         long messageID = jsonObject.getLong("message_id");
 
         try (TemplateFactory userInfo = new TemplateFactory(template)) {
             userInfo.setPlaceholder("nickname", lastKnownName)
                     .setPlaceholder("status", status)
-                    .setPlaceholder("avatar", "https://api.mineatar.io/face/" + uuid + "?scale=12");    // get image from api https://api.mineatar.io/face/<UUID>
+                    .setPlaceholder("avatar", "https://api.mineatar.io/face/" + uuid + "?scale=12") // get image from api https://api.mineatar.io/face/<UUID>
+                    .setPlaceholder("time", timeConverter(offlinePlayer.getStatistic(Statistic.PLAY_ONE_MINUTE)))
+                    .setPlaceholder("walk", distanceConverter(offlinePlayer.getStatistic(Statistic.WALK_ONE_CM)))
+            ;
             BufferedImage userInfoImage = WebDriverManager.getInstance().takeScreenshot(userInfo.build(offlinePlayer), template);
             if (jsonObject.containsKey("group_id")) {
                 long groupID = jsonObject.getLong("group_id");
