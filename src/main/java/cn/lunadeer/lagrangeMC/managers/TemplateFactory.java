@@ -14,51 +14,47 @@ import java.util.Map;
 
 public class TemplateFactory implements AutoCloseable {
 
+    private final String templateName;
     private String indexFileContent;
-    private Map<String, byte[]> resourcesFileContent;
+    private Map<String, byte[]> resourcesFileContent = new HashMap<>();
     private final Path outputPath;
 
     public TemplateFactory(String templateName) {
+        this.templateName = templateName;
+        // plugins/LagrangeMC/templates/public
+        File publicFileRoot = new File(LagrangeMC.getInstance().getDataFolder(), "templates/public");
+        if (!publicFileRoot.exists()) {
+            throw new RuntimeException("找不到公共目录: " + publicFileRoot.getAbsolutePath());
+        }
+        // plugins/LagrangeMC/templates/<templateName>
         File templateFileRoot = new File(LagrangeMC.getInstance().getDataFolder(), "templates/" + templateName);
         if (!templateFileRoot.exists()) {
             throw new RuntimeException("找不到模板目录: " + templateFileRoot.getAbsolutePath());
         }
+        // plugins/LagrangeMC/templates/<templateName>/index.html
         File indexFile = new File(templateFileRoot, "index.html");
         if (!indexFile.exists()) {
             throw new RuntimeException("找不到模板文件: " + indexFile.getAbsolutePath());
         }
         try {
             outputPath = Files.createTempDirectory("screen_shoot_data_");
+            // read: plugins/LagrangeMC/templates/<templateName>/index.html
             indexFileContent = Files.readString(indexFile.toPath());
-            File[] files = templateFileRoot.listFiles();
-            if (files == null) {
+            // read: plugins/LagrangeMC/templates/<templateName>/
+            File[] templateFiles = templateFileRoot.listFiles();
+            if (templateFiles == null) {
                 throw new RuntimeException("读取目录失败: " + templateFileRoot.getAbsolutePath());
             }
-            resourcesFileContent = loadResourcesRecursively(files, "");
+            resourcesFileContent.putAll(loadResourcesRecursively(templateFiles, templateName + "/"));
+            // read: plugins/LagrangeMC/templates/public/
+            File[] publicFiles = publicFileRoot.listFiles();
+            if (publicFiles == null) {
+                throw new RuntimeException("读取目录失败: " + publicFileRoot.getAbsolutePath());
+            }
+            resourcesFileContent.putAll(loadResourcesRecursively(publicFiles, "public/"));
         } catch (Exception e) {
             throw new RuntimeException("读取模板文件失败: " + e.getMessage(), e);
         }
-    }
-
-    private static Map<String, byte[]> loadResourcesRecursively(@NotNull File[] files, String prefix) {
-        Map<String, byte[]> resources = new HashMap<>();
-        for (File child : files) {
-            if (child.isDirectory()) {
-                File[] f = child.listFiles();
-                if (f == null) {
-                    throw new RuntimeException("读取目录失败: " + child.getAbsolutePath());
-                }
-                resources.putAll(loadResourcesRecursively(f, prefix + child.getName() + "/"));
-            } else {
-                if (child.getName().equals("index.html")) return resources;
-                try {
-                    resources.put(prefix + child.getName(), Files.readAllBytes(child.toPath()));
-                } catch (Exception e) {
-                    throw new RuntimeException("读取文件失败: " + child.getAbsolutePath() + " " + e.getMessage(), e);
-                }
-            }
-        }
-        return resources;
     }
 
     public TemplateFactory setPlaceholder(String key, String value) {
@@ -66,12 +62,11 @@ public class TemplateFactory implements AutoCloseable {
         return this;
     }
 
-
     public File build(OfflinePlayer player) {
         try {
             if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
                 indexFileContent = PlaceHolderApiManager.setPlaceholders(player, indexFileContent);
-            File indexFile = new File(outputPath.toFile(), "index.html");
+            File indexFile = new File(outputPath.toFile(), templateName + "/index.html");
             XLogger.debug(indexFileContent);
             Files.writeString(indexFile.toPath(), indexFileContent);
             for (Map.Entry<String, byte[]> entry : resourcesFileContent.entrySet()) {
@@ -97,5 +92,26 @@ public class TemplateFactory implements AutoCloseable {
         }
         indexFileContent = null;
         resourcesFileContent = null;
+    }
+
+    private static Map<String, byte[]> loadResourcesRecursively(@NotNull File[] files, String prefix) {
+        Map<String, byte[]> resources = new HashMap<>();
+        for (File child : files) {
+            if (child.isDirectory()) {
+                File[] f = child.listFiles();
+                if (f == null) {
+                    throw new RuntimeException("读取目录失败: " + child.getAbsolutePath());
+                }
+                resources.putAll(loadResourcesRecursively(f, prefix + child.getName() + "/"));
+            } else {
+                if (child.getName().equals("index.html")) return resources;
+                try {
+                    resources.put(prefix + child.getName(), Files.readAllBytes(child.toPath()));
+                } catch (Exception e) {
+                    throw new RuntimeException("读取文件失败: " + child.getAbsolutePath() + " " + e.getMessage(), e);
+                }
+            }
+        }
+        return resources;
     }
 }
