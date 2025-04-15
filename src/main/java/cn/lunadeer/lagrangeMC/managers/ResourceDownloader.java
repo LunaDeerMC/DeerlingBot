@@ -3,15 +3,109 @@ package cn.lunadeer.lagrangeMC.managers;
 import cn.lunadeer.lagrangeMC.configuration.Configuration;
 import org.bukkit.plugin.java.JavaPlugin;
 
-// https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/<TAG>/libs-<SYS_TYPE>.zip
-// https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/<TAG>/templates.zip
+import java.io.File;
+import java.nio.file.Files;
+
 public class ResourceDownloader {
 
-    private static String LIBS_TAG = "libs-2025.04.13.17.30.20";
-    private static String TEMPLATES_TAG = "templates-2025.04.13.17.34.02";
+    private JavaPlugin plugin;
+    private static ResourceDownloader instance;
+
+    private final int[] LIBS_VER = {2025, 4, 13, 17, 30, 20};  // libs-VER
+    private final int[] TEMPLATES_VER = {2025, 4, 13, 17, 34, 2};  // templates-VER
 
     public ResourceDownloader(JavaPlugin plugin) {
-        if (!Configuration.fancyCommand) return;
+        this.plugin = plugin;
+        instance = this;
+    }
+
+    public static ResourceDownloader getInstance() {
+        if (instance == null) {
+            throw new IllegalStateException("ResourceDownloader is not initialized");
+        }
+        return instance;
+    }
+
+    public int[] getLatestTemplatesVer() {
+        return TEMPLATES_VER;
+    }
+
+    public int[] getLatestLibsVer() {
+        return LIBS_VER;
+    }
+
+    public String libsTag(int[] ver) {
+        return "libs-" + String.format("%04d", ver[0]) + "." +
+                String.format("%02d", ver[1]) + "." +
+                String.format("%02d", ver[2]) + "." +
+                String.format("%02d", ver[3]) + "." +
+                String.format("%02d", ver[4]) + "." +
+                String.format("%02d", ver[5]);
+    }
+
+    public String libsLink() {
+        // https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/<TAG>/libs-<SYS_TYPE>.zip
+        return "https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/" +
+                libsTag(LIBS_VER) + "/libs-" + getSys().name + ".zip";
+    }
+
+    public String templatesTag(int[] ver) {
+        return "templates-" + String.format("%04d", ver[0]) + "." +
+                String.format("%02d", ver[1]) + "." +
+                String.format("%02d", ver[2]) + "." +
+                String.format("%02d", ver[3]) + "." +
+                String.format("%02d", ver[4]) + "." +
+                String.format("%02d", ver[5]);
+    }
+
+    public String templatesLink() {
+        // https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/<TAG>/templates.zip
+        return "https://github.com/LunaDeerMC/LagrangeMC_resources/releases/download/" +
+                templatesTag(TEMPLATES_VER) + "/templates.zip";
+    }
+
+    public int[] getTemplatesVer() {
+        File file = new File(plugin.getDataFolder(), "templates/version.txt");
+        if (!file.exists()) {
+            throw new RuntimeException("未下载 | 找不到 templates/version.txt 文件");
+        }
+        return getVersionNumbers(file);
+    }
+
+    public int[] getLibsVer() {
+        File file = new File(plugin.getDataFolder(), "libs/version.txt");
+        if (!file.exists()) {
+            throw new RuntimeException("未下载 | 找不到 libs/version.txt 文件");
+        }
+        return getVersionNumbers(file);
+    }
+
+    private static int[] getVersionNumbers(File file) {
+        try {
+            String version = Files.readString(file.toPath()).replace("\n", "").replace("\r", "");
+            String[] versionParts = version.split("\\.");
+            if (versionParts.length != 6) {
+                throw new RuntimeException(file.getAbsolutePath() + " 文件格式错误");
+            }
+            int[] versionNumbers = new int[6];
+            for (int i = 0; i < versionParts.length; i++) {
+                versionNumbers[i] = Integer.parseInt(versionParts[i]);
+            }
+            return versionNumbers;
+        } catch (Exception e) {
+            throw new RuntimeException("读取版本号失败: " + e.getMessage(), e);
+        }
+    }
+
+    public static boolean needUpdate(int[] currentVersion, int[] newVersion) {
+        for (int i = 0; i < currentVersion.length; i++) {
+            if (currentVersion[i] < newVersion[i]) {
+                return true;
+            } else if (currentVersion[i] > newVersion[i]) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private enum SYS_TYPE {
@@ -27,7 +121,7 @@ public class ResourceDownloader {
         }
     }
 
-    private SYS_TYPE getSys() {
+    private static SYS_TYPE getSys() {
         String os = System.getProperty("os.name").toLowerCase();
         String arch = System.getProperty("os.arch").toLowerCase();
         if (os.contains("win")) {

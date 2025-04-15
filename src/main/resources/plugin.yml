@@ -4,3 +4,15 @@ main: cn.lunadeer.lagrangeMC.LagrangeMC
 api-version: '1.20'
 folia-supported: true
 libraries: [ ]
+commands:
+    lagrange:
+        description: LagrangeMC command
+        usage: /lagrange <subcommand>
+        aliases: [lm]
+        permission: lagrangemc.command.lagrange
+        permission-message: You do not have permission to use this command.
+
+permissions:
+    lagrangemc.command.lagrange:
+        description: Allows the player to use the /lagrange command
+        default: op

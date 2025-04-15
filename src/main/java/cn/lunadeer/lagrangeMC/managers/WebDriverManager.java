@@ -26,8 +26,6 @@ public class WebDriverManager {
 
     public WebDriverManager(JavaPlugin plugin) {
         instance = this;
-        // todo download chromedriver automatically maybe....
-        boolean re = new File(plugin.getDataFolder(), "libs").mkdirs();
         System.setProperty("webdriver.chrome.driver", new File(plugin.getDataFolder(), "libs/chromedriver").getAbsolutePath());
         options = new ChromeOptions();
         options.setBinary(new File(plugin.getDataFolder(), "libs/chrome/chrome").getAbsolutePath());
@@ -72,6 +70,9 @@ public class WebDriverManager {
     }
 
     public void close() {
+        if (instance != null) {
+            instance = null;
+        }
     }
 
 }

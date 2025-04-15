@@ -67,6 +67,9 @@ public class TemplateFactory implements AutoCloseable {
             if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
                 indexFileContent = PlaceHolderApiManager.setPlaceholders(player, indexFileContent);
             File indexFile = new File(outputPath.toFile(), templateName + "/index.html");
+            if (!indexFile.getParentFile().exists()) {
+                boolean re = indexFile.getParentFile().mkdirs();
+            }
             XLogger.debug(indexFileContent);
             Files.writeString(indexFile.toPath(), indexFileContent);
             for (Map.Entry<String, byte[]> entry : resourcesFileContent.entrySet()) {
@@ -78,7 +81,7 @@ public class TemplateFactory implements AutoCloseable {
             }
             return indexFile;
         } catch (Exception e) {
-            throw new RuntimeException("写入模板文件失败", e);
+            throw new RuntimeException("写入模板文件失败：" + e.getMessage(), e);
         }
     }
 

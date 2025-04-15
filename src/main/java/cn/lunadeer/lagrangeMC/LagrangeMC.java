@@ -26,6 +26,7 @@ public final class LagrangeMC extends JavaPlugin {
         new Scheduler(this);
         new Notification(this);
         new XLogger(this);
+        new ResourceDownloader(this);
         try {
             ConfigurationManager.load(Configuration.class, new File(getDataFolder(), "config.yml"));
             ConfigurationManager.load(MessageText.class, new File(getDataFolder(), "messages.yml"));
@@ -43,7 +44,7 @@ public final class LagrangeMC extends JavaPlugin {
         XLogger.info(" |______\\__,_|\\__, |_|  \\__,_|_| |_|\\__, |\\___|_|  |_|\\_____|");
         XLogger.info("               __/ |                 __/ |");
         XLogger.info("              |___/                 |___/");
-        new ResourceDownloader(this);
+        new BukkitCommand(this);
         new DatabaseManager(this,
                 Configuration.database.type, Configuration.database.host,
                 Configuration.database.port, Configuration.database.database, Configuration.database.username,
@@ -62,7 +63,6 @@ public final class LagrangeMC extends JavaPlugin {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-
     }
 
     @Override

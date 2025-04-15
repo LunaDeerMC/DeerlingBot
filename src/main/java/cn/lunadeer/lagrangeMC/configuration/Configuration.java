@@ -1,7 +1,11 @@
 package cn.lunadeer.lagrangeMC.configuration;
 
+import cn.lunadeer.lagrangeMC.LagrangeMC;
+import cn.lunadeer.lagrangeMC.managers.ResourceDownloader;
+import cn.lunadeer.lagrangeMC.utils.XLogger;
 import cn.lunadeer.lagrangeMC.utils.configuration.*;
 
+import java.io.File;
 import java.util.List;
 
 public class Configuration extends ConfigurationFile {
@@ -117,5 +121,16 @@ public class Configuration extends ConfigurationFile {
     }
 
     public static boolean debug = false;
+
+    @PostProcess
+    public void postProcess() {
+        File libs = new File(LagrangeMC.getInstance().getDataFolder(), "libs");
+        File templates = new File(LagrangeMC.getInstance().getDataFolder(), "templates");
+        if (!libs.exists() || !templates.exists()) {
+            XLogger.error("由于缺少 libs 或 templates 文件夹，无法使用 fancyCommand 特性，详情请查阅文档。");
+            XLogger.warn("libs 下载地址：{0}", ResourceDownloader.getInstance().libsLink());
+            XLogger.warn("templates 下载地址：{0}", ResourceDownloader.getInstance().templatesLink());
+        }
+    }
 
 }
