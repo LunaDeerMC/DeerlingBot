@@ -57,6 +57,7 @@ public final class LagrangeMC extends JavaPlugin {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new PlaceHolderApiManager(this);
         }
+        this.getServer().getPluginManager().registerEvents(new JoinLeaveEvents(), this);
 
         try {
             new WhitelistTable();

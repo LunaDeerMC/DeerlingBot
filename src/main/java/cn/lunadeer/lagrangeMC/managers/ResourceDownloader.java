@@ -1,6 +1,5 @@
 package cn.lunadeer.lagrangeMC.managers;
 
-import cn.lunadeer.lagrangeMC.configuration.Configuration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -11,7 +10,7 @@ public class ResourceDownloader {
     private JavaPlugin plugin;
     private static ResourceDownloader instance;
 
-    private final int[] LIBS_VER = {2025, 4, 13, 17, 30, 20};  // libs-VER
+    private final int[] LIBS_VER = {2025, 4, 15, 6, 57, 31};  // libs-VER
     private final int[] TEMPLATES_VER = {2025, 4, 13, 17, 34, 2};  // templates-VER
 
     public ResourceDownloader(JavaPlugin plugin) {

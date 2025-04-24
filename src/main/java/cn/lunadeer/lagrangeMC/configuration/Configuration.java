@@ -120,6 +120,20 @@ public class Configuration extends ConfigurationFile {
         public String groupPrefix = "[群消息]<%nickname%> ";
     }
 
+    @Comments("登录/登出消息设置（支持PlaceHolderAPI）")
+    public static JoinQuitMessage joinQuitMessage = new JoinQuitMessage();
+
+    public static class JoinQuitMessage extends ConfigurationPart {
+        @Comment("是否启用玩家加入/离开服务器的消息")
+        public boolean enable = true;
+        @Comment("显示进入离开消息的群")
+        public String groupId = "12345678";
+        @Comment("加入服务器时的消息")
+        public String joinMessage = "✔ [%player_name%] 加入了服务器";
+        @Comment("离开服务器时的消息")
+        public String quitMessage = "✖ [%player_name%] 离开了服务器";
+    }
+
     public static boolean debug = false;
 
     @PostProcess

@@ -44,18 +44,6 @@ public class MessageManager implements Listener {
         if (!Configuration.messageTransfer.enable) return;
         String message = event.getMessage();
         if (!message.startsWith(Configuration.messageTransfer.serverFlag)) return;
-        try {
-            if (Configuration.messageTransfer.bindRequired && !WhitelistTable.getInstance().isBind(event.getPlayer().getUniqueId())) {
-                if (!Configuration.messageTransfer.serverFlag.isEmpty()) {
-                    String code = WhitelistTable.getInstance().getCode(event.getPlayer().getUniqueId());
-                    Notification.warn(event.getPlayer(), Configuration.whiteList.getBindMessage(code));
-                }
-                return;
-            }
-        } catch (Exception e) {
-            XLogger.error(e);
-            return;
-        }
         message = message.substring(Configuration.messageTransfer.serverFlag.length());
         message = Configuration.messageTransfer.serverPrefix + message;
         message = message.replace("%player_name%", event.getPlayer().getName());

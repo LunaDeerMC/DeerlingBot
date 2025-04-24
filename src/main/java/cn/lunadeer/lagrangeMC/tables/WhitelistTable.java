@@ -54,7 +54,7 @@ public class WhitelistTable {
             Insert.insert().into("user_record")
                     .values(new FieldString("uuid", uuid.toString()),
                             new FieldString("last_known_name", name),
-                            new FieldString("code", code),
+                            new FieldString("code", code.toUpperCase()),
                             new FieldTimestamp("last_join_at", Timestamp.valueOf(LocalDateTime.now())))
                     .onConflict("uuid").doNothing().execute();
         } catch (SQLException e) {
@@ -114,7 +114,7 @@ public class WhitelistTable {
         List<Map<String, Field<?>>> res = Select
                 .select(new FieldBoolean("bind", false))
                 .from("user_record")
-                .where("code = ?", code)
+                .where("code = ?", code.toUpperCase())
                 .execute();
         if (res.isEmpty()) return false;
         return !(boolean) res.get(0).get("bind").getValue();
@@ -123,7 +123,7 @@ public class WhitelistTable {
     public void setBind(String code, long userId) throws Exception {
         Update.update("user_record")
                 .set(new FieldBoolean("bind", true), new FieldLong("user_id", userId))
-                .where("code = ?", code)
+                .where("code = ?", code.toUpperCase())
                 .execute();
     }
 

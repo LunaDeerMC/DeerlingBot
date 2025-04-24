@@ -35,7 +35,7 @@ public class BindManager implements Listener {
     public boolean bind(long userId, String code) {
         try {
             if (WhitelistTable.getInstance().isCodeAvailable(code.toUpperCase())) {
-                WhitelistTable.getInstance().setBind(code, userId);
+                WhitelistTable.getInstance().setBind(code.toUpperCase(), userId);
                 return true;
             } else {
                 XLogger.debug("Code {0} is not available", code);
