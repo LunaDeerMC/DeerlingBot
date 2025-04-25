@@ -14,7 +14,7 @@ libraries += "com.alibaba:fastjson:2.0.31"
 libraries += "org.seleniumhq.selenium:selenium-java:4.9.0"
 
 group = "cn.lunadeer"
-version = "1.0-alpha.1"
+version = "1.0-alpha.2"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))

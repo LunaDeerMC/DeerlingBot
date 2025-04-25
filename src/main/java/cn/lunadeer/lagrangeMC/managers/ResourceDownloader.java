@@ -11,7 +11,7 @@ public class ResourceDownloader {
     private static ResourceDownloader instance;
 
     private final int[] LIBS_VER = {2025, 4, 15, 6, 57, 31};  // libs-VER
-    private final int[] TEMPLATES_VER = {2025, 4, 13, 17, 34, 2};  // templates-VER
+    private final int[] TEMPLATES_VER = {2025, 4, 25, 3, 44, 5};  // templates-VER
 
     public ResourceDownloader(JavaPlugin plugin) {
         this.plugin = plugin;

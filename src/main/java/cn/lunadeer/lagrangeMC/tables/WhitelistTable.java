@@ -20,7 +20,7 @@ public class WhitelistTable {
 
     public WhitelistTable() throws SQLException {
         Column user_record_id = Column.of(new FieldInteger("id")).primary().serial().notNull().unique();
-        Column user_user_id = Column.of(new FieldLong("user_id")).notNull().defaultSqlVal("'0'").unique();
+        Column user_user_id = Column.of(new FieldLong("user_id")).notNull().defaultSqlVal("'0'");
         Column user_record_uuid = Column.of(new FieldString("uuid")).notNull().unique();
         Column user_record_last_known_name = Column.of(new FieldString("last_known_name")).notNull().defaultSqlVal("'unknown'");
         Column user_record_code = Column.of(new FieldString("code")).notNull();
