@@ -22,6 +22,7 @@ public abstract class BotCommand {
     public static class BotCommandText extends ConfigurationPart {
         public String adminOnly = "此指令仅机器人管理员可用";
         public String groupOnly = "此指令仅可在群中使用";
+        public String privateOnly = "此指令仅可在私聊中使用";
         public String bindRequired = "游戏账号绑定QQ后才能使用此指令";
     }
 
@@ -33,6 +34,9 @@ public abstract class BotCommand {
 
     // Indicates whether the command is restricted to admin users only
     private final boolean adminOnly;
+
+    // Indicates whether the command can only be used in private messages
+    private final boolean privateOnly;
 
     // Indicates whether the command can only be used in groups
     private final boolean groupOnly;
@@ -49,10 +53,11 @@ public abstract class BotCommand {
      * @param groupOnly    Whether the command can only be used in groups.
      * @param bindRequired Whether the command requires a bind.
      */
-    public BotCommand(String command, String description, boolean adminOnly, boolean groupOnly, boolean bindRequired) {
+    public BotCommand(String command, String description, boolean adminOnly, boolean privateOnly,boolean groupOnly, boolean bindRequired) {
         this.command = command;
         this.description = description;
         this.adminOnly = adminOnly;
+        this.privateOnly = privateOnly;
         this.groupOnly = groupOnly;
         this.bindRequired = bindRequired;
     }
@@ -72,11 +77,15 @@ public abstract class BotCommand {
         if (!jsonObject.containsKey("message_id")) return;
         long messageID = jsonObject.getLong("message_id");
 
-        // group only
+        // group or private only
         Long groupID = null;
         if (jsonObject.containsKey("group_id")) {
             groupID = jsonObject.getLong("group_id");
             if (!Configuration.groupList.contains(String.valueOf(groupID))) return;
+            if (privateOnly) {
+                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.privateOnly));
+                return;
+            }
         } else if (groupOnly) {
             PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.groupOnly));
             return;

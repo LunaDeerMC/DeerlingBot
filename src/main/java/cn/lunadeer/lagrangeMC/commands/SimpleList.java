@@ -22,7 +22,7 @@ public class SimpleList extends BotCommand {
     }
 
     public SimpleList() {
-        super("list", "列出当前在线的玩家", false, false, true);
+        super("list", "列出当前在线的玩家", false, false, false, true);
     }
 
     @Override

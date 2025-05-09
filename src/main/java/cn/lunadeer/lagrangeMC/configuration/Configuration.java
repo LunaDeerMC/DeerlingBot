@@ -59,33 +59,28 @@ public class Configuration extends ConfigurationFile {
     })
     public static List<String> adminAccountList = List.of("12345678", "87654321");
 
+    @Comments({"白名单配置"})
     public static WhiteList whiteList = new WhiteList();
 
     public static class WhiteList extends ConfigurationPart {
-        @Comment("是否要求白名单绑定")
-        public boolean required = true;
-        @Comments({
-                "强制要求白名单绑定的话未绑定的玩家会无法加入服务器",
-                "并提示 kick-message 配置的内容",
-        })
-        public List<String> kickMessage = List.of(
-                "===========================",
-                "",
-                "本服务器需要白名单",
-                "",
-                "请在群内输入 /bind %code% 完成绑定",
-                "",
-                "==========================="
-        );
+        @HandleManually
+        public enum Type {
+            none,
+            code,
+            question
+        }
+
+        @Comment("白名单类型：none, code, question")
+        public String type = Type.none.toString();
 
         @HandleManually
-        public String getKickMessage(String code) {
-            StringBuilder message = new StringBuilder().append("\n");
-            for (String line : kickMessage) {
-                message.append(line).append("\n");
+        public Type getType() {
+            try {
+                return Type.valueOf(type);
+            } catch (IllegalArgumentException e) {
+                XLogger.error("Invalid white list type: {0}", type);
+                return Type.none;
             }
-            String finalMessage = message.toString();
-            return finalMessage.replace("%code%", code);
         }
 
         @Comments({
@@ -98,6 +93,65 @@ public class Configuration extends ConfigurationFile {
         public String getBindMessage(String code) {
             return bindMessage.replace("%code%", code);
         }
+
+        @Comment("玩家退群后是否自动删除白名单")
+        public boolean autoRemove = true;
+
+        @Comments({"验证码白名单配置"})
+        public Code code = new Code();
+
+        public static class Code extends ConfigurationPart {
+            public List<String> kickMessage = List.of(
+                    "===========================",
+                    "",
+                    "本服务器需要白名单",
+                    "",
+                    "请在群内输入 /bind %code% 完成绑定",
+                    "",
+                    "==========================="
+            );
+
+            @HandleManually
+            public String getKickMessage(String code) {
+                StringBuilder message = new StringBuilder().append("\n");
+                for (String line : kickMessage) {
+                    message.append(line).append("\n");
+                }
+                String finalMessage = message.toString();
+                return finalMessage.replace("%code%", code);
+            }
+        }
+
+        @Comments({"答题白名单配置"})
+        public Question question = new Question();
+
+        public static class Question extends ConfigurationPart {
+            @Comment("总题数目（请确保 questions.yml 题库中的题目数量大于此值）")
+            public int total = 10;
+
+            @Comment("答对大于等于此数量的题自动获得白名单")
+            public int pass = 8;
+
+            public List<String> kickMessage = List.of(
+                    "===========================",
+                    "",
+                    "本服务器需要问卷白名单",
+                    "",
+                    "请在群内私聊机器人发送 /question 参与问卷答题获取白名单",
+                    "",
+                    "==========================="
+            );
+
+            @HandleManually
+            public String getKickMessage() {
+                StringBuilder message = new StringBuilder().append("\n");
+                for (String line : kickMessage) {
+                    message.append(line).append("\n");
+                }
+                return message.toString();
+            }
+        }
+
     }
 
     @Comments("消息转发设置")

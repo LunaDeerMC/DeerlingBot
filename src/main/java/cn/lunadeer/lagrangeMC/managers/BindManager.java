@@ -66,8 +66,10 @@ public class BindManager implements Listener {
             event.getPlayer().kickPlayer(e.getMessage());
             return;
         }
-        if (Configuration.whiteList.required) {
-            event.getPlayer().kickPlayer(Configuration.whiteList.getKickMessage(code));
+        if (Configuration.whiteList.getType() == Configuration.WhiteList.Type.code) {
+            event.getPlayer().kickPlayer(Configuration.whiteList.code.getKickMessage(code));
+        } else if (Configuration.whiteList.getType() == Configuration.WhiteList.Type.question) {
+            event.getPlayer().kickPlayer(Configuration.whiteList.question.getKickMessage());
         } else {
             Notification.info(event.getPlayer(), Configuration.whiteList.getBindMessage(code));
         }

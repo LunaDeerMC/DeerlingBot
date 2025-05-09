@@ -71,6 +71,11 @@ public class CoreConnector {
             String text = data.getString("text");
             if (text == null) return null;
 
+            if (!jsonObject.containsKey("group_id") &&  // only handle private answer
+                    QuestionManager.getInstance().handleAnswer(text, jsonObject)) {
+                return null;
+            }
+
             if (text.startsWith(Configuration.commandPrefix)) {
                 CommandManager.getInstance().handleBotCommand(text, jsonObject);
             } else {

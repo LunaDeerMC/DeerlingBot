@@ -26,7 +26,7 @@ public class FancyInfo extends BotCommand {
     private final String template = "user_info";
 
     public FancyInfo() {
-        super("info", "查看个人信息", false, false, true);
+        super("info", "查看个人信息", false, false, false, true);
     }
 
     @Override

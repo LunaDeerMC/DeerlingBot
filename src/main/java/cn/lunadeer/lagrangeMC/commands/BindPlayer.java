@@ -24,7 +24,7 @@ public class BindPlayer extends BotCommand {
     }
 
     public BindPlayer() {
-        super("bind", "绑定白名单", false, false, false);
+        super("bind", "绑定白名单", false, false, false, false);
     }
 
     @Override

@@ -21,7 +21,7 @@ import static cn.lunadeer.lagrangeMC.protocols.MessageSegment.*;
 
 public class SimpleInfo extends BotCommand {
     public SimpleInfo() {
-        super("info", "查看个人信息", false, false, true);
+        super("info", "查看个人信息", false, false, false, true);
     }
 
     @Override

@@ -54,6 +54,7 @@ public final class LagrangeMC extends JavaPlugin {
         new BindManager(this);
         new MessageManager(this);
         new WebDriverManager(this);
+        new QuestionManager(this);
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new PlaceHolderApiManager(this);
         }
