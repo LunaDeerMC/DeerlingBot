@@ -63,8 +63,8 @@ public class MessageManager implements Listener {
                 }
                 return;
             }
-            // force set nickname
-            if (Configuration.messageTransfer.bindRequired) {
+            // force set card name
+            if (Configuration.messageTransfer.bindRequired && Configuration.syncCardName) {
                 nickName = WhitelistTable.getInstance().getLastKnownName(userID);
                 GroupOperation.SetGroupCard(groupID, userID, nickName);
             }

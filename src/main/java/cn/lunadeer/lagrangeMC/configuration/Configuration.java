@@ -134,6 +134,9 @@ public class Configuration extends ConfigurationFile {
         public String quitMessage = "✖ [%player_name%] 离开了服务器";
     }
 
+    @Comment("是否强制设置群名片为玩家昵称(当玩家绑定时)")
+    public static boolean syncCardName = true;
+
     public static boolean debug = false;
 
     @PostProcess

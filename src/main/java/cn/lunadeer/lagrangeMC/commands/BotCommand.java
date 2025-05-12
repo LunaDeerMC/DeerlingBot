@@ -102,6 +102,13 @@ public abstract class BotCommand {
                 }
                 return;
             }
+            if (bindRequired && Configuration.syncCardName && groupID != null) {
+                String cardName = sender.getString("card");
+                String playerName = WhitelistTable.getInstance().getLastKnownName(userID);
+                if (cardName == null || !cardName.equals(playerName)) {
+                    GroupOperation.SetGroupCard(groupID, userID, playerName);
+                }
+            }
         } catch (Exception e) {
             // Handle exception
             XLogger.error(e);
