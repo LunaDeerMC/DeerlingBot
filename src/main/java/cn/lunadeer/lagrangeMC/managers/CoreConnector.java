@@ -50,7 +50,13 @@ public class CoreConnector {
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence charSeq, boolean last) {
             String sqlStr = charSeq.toString();
             webSocket.request(1);
-            JSONObject jsonObject = JSONObject.parseObject(sqlStr);
+            JSONObject jsonObject;
+            try {
+                jsonObject = JSONObject.parseObject(sqlStr);
+            } catch (Exception e) {
+                XLogger.error("JSON解析异常: " + e.getMessage() + "，原始数据：" + sqlStr);
+                return null;
+            }
 
             if (!jsonObject.containsKey("self_id")) return null;
             if (!jsonObject.getLong("self_id").equals(Long.parseLong(Configuration.botId))) return null;
