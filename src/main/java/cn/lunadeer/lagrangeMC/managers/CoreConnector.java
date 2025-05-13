@@ -8,6 +8,7 @@ import com.alibaba.fastjson2.JSONObject;
 
 import java.net.URI;
 import java.net.http.WebSocket;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 public class CoreConnector {
@@ -41,6 +42,10 @@ public class CoreConnector {
     }
 
     private final static WebSocket.Listener listener = new WebSocket.Listener() {
+
+        // 用于累积接收到的文本帧
+        private final StringBuilder messageBuffer = new StringBuilder();
+
         @Override
         public void onOpen(WebSocket webSocket) {
             webSocket.request(1); // Request one message
@@ -48,7 +53,13 @@ public class CoreConnector {
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence charSeq, boolean last) {
-            String sqlStr = charSeq.toString();
+            messageBuffer.append(charSeq);
+            if (!last) {
+                webSocket.request(1);
+                return null;
+            }
+            String sqlStr = messageBuffer.toString();
+            messageBuffer.setLength(0); // 清空缓冲区
             webSocket.request(1);
             JSONObject jsonObject;
             try {

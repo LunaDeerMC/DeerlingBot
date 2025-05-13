@@ -14,7 +14,7 @@ libraries += "com.alibaba:fastjson:2.0.31"
 libraries += "org.seleniumhq.selenium:selenium-java:4.9.0"
 
 group = "cn.lunadeer"
-version = "1.0-alpha.2"
+version = "1.0-alpha.3"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
@@ -30,6 +30,7 @@ allprojects {
         maven("https://oss.sonatype.org/content/groups/public")
         maven("https://repo.papermc.io/repository/maven-public/")
         maven("https://jitpack.io")
+        maven("https://repo.extendedclip.com/releases/")
     }
 
     dependencies {
