@@ -136,9 +136,9 @@ public class Misc {
         } else if (num < 1000000) {
             return String.format("%.2f", num / 1000.0) + " 千";
         } else if (num < 1000000000) {
-            return String.format("%.2f", num / 1000000.0) + " 万";
+            return String.format("%.2f", num / 1000000.0) + " 百万";
         } else {
-            return String.format("%.2f", num / 1000000000.0) + " 亿";
+            return String.format("%.2f", num / 100000000.0) + " 亿";
         }
     }
 }
