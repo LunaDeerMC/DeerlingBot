@@ -42,6 +42,7 @@ public class MessageManager implements Listener {
     @EventHandler
     public void serverMessageToGroup(AsyncPlayerChatEvent event) {
         if (!Configuration.messageTransfer.enable) return;
+        if (event.isCancelled()) return;
         String message = event.getMessage();
         if (!message.startsWith(Configuration.messageTransfer.serverFlag)) return;
         message = message.substring(Configuration.messageTransfer.serverFlag.length());
