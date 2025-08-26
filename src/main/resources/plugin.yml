@@ -1,18 +1,19 @@
-name: LagrangeMC
+name: DeerlingBot
 version: @version@
-main: cn.lunadeer.lagrangeMC.LagrangeMC
+main: cn.lunadeer.mc.deerlingbot.DeerlingBot
 api-version: '1.20'
 folia-supported: true
 libraries: [ ]
 commands:
-    lagrange:
-        description: LagrangeMC command
-        usage: /lagrange <subcommand>
-        aliases: [lm]
-        permission: lagrangemc.command.lagrange
-        permission-message: You do not have permission to use this command.
+  deerling:
+    description: Main command for DeerlingBot
+    usage: /deerling <subcommand>
+    permission-message: You do not have permission to use this command.
 
 permissions:
-    lagrangemc.command.lagrange:
-        description: Allows the player to use the /lagrange command
-        default: op
+  deerling.command.admin:
+    description: Admin permission for DeerlingBot
+    default: op
+  deerling.command.user:
+    description: User permission for DeerlingBot
+    default: true
