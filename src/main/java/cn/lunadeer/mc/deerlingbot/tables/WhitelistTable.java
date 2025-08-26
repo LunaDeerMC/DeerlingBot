@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.tables;
 
 import cn.lunadeer.mc.deerlingbot.utils.databse.FIelds.*;
+import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Delete;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Insert;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Select;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Table.Column;
@@ -175,5 +176,11 @@ public class WhitelistTable {
                 .execute();
         if (res.isEmpty()) throw new RuntimeException("No record found for UUID: " + uuid);
         return res.get(0).get("last_join_at").getValue().toString();
+    }
+
+    public void deletePlayer(long userId) throws Exception {
+        Delete.delete().from("user_record")
+                .where("user_id = ?", userId)
+                .execute();
     }
 }

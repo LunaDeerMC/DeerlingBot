@@ -1,6 +1,8 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
+import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupBan;
+import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.Notification;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
@@ -70,6 +72,15 @@ public class BindManager implements Listener {
             event.getPlayer().kickPlayer(Configuration.whiteList.getKickMessage(code));
         } else {
             Notification.info(event.getPlayer(), Configuration.whiteList.getBindMessage(code));
+        }
+    }
+
+    @EventHandler
+    public void onQuitGroup(GroupDecrease event) {
+        try {
+            WhitelistTable.getInstance().deletePlayer(event.getUserId());
+        } catch (Exception e) {
+            XLogger.error(e);
         }
     }
 }

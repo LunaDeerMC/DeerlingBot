@@ -5,13 +5,14 @@ import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
 import cn.lunadeer.mc.deerlingbot.managers.BindManager;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
-import com.alibaba.fastjson2.JSONObject;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.ReplySegment;
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.TextSegment;
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.formatString;
 
 public class BindPlayer extends BotCommand {
@@ -28,29 +29,36 @@ public class BindPlayer extends BotCommand {
     }
 
     @Override
-    public void handle(long userID, String commandText, JSONObject jsonObject) {
-        Long groupID = jsonObject.getLong("group_id");
+    public void handle(Message messageEvent, String... args) {
+        Long groupID = messageEvent instanceof GroupMessage groupMessage ? groupMessage.getGroupID() : null;
+        long userID = messageEvent.getUserId();
 
-        if (!jsonObject.containsKey("message_id")) return;
-        long messageID = jsonObject.getLong("message_id");
+        long messageID = messageEvent.getMessageId();
 
-        String[] commandTextSplit = commandText.split(" ");
-        if (commandTextSplit.length != 2) {
+        if (args.length != 1) {
             if (groupID != null)
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
+                GroupOperation.SendGroupMessage(groupID,
+                        new ReplySegment(messageID),
+                        new TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
             else
-                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
+                PrivateOperation.SendPrivateMessage(userID,
+                        new ReplySegment(messageID),
+                        new TextSegment(formatString(MessageText.bindPlayerText.commandError, Configuration.commandPrefix)));
             return;
         }
-        String code = commandTextSplit[1];
+        String code = args[0];
 
         try {
             if (WhitelistTable.getInstance().isBind(userID)) {
                 XLogger.debug("User {0} is already verified", userID);
                 if (groupID != null)
-                    GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.alreadyBind));
+                    GroupOperation.SendGroupMessage(groupID,
+                            new ReplySegment(messageID),
+                            new TextSegment(MessageText.bindPlayerText.alreadyBind));
                 else
-                    PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.alreadyBind));
+                    PrivateOperation.SendPrivateMessage(userID,
+                            new ReplySegment(messageID),
+                            new TextSegment(MessageText.bindPlayerText.alreadyBind));
                 return;
             }
         } catch (Exception e) {
@@ -60,14 +68,22 @@ public class BindPlayer extends BotCommand {
 
         if (BindManager.getInstance().bind(userID, code)) {
             if (groupID != null)
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindSuccess));
+                GroupOperation.SendGroupMessage(groupID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.bindPlayerText.bindSuccess));
             else
-                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindSuccess));
+                PrivateOperation.SendPrivateMessage(userID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.bindPlayerText.bindSuccess));
         } else {
             if (groupID != null)
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindFailed));
+                GroupOperation.SendGroupMessage(groupID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.bindPlayerText.bindFailed));
             else
-                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.bindPlayerText.bindFailed));
+                PrivateOperation.SendPrivateMessage(userID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.bindPlayerText.bindFailed));
         }
     }
 }

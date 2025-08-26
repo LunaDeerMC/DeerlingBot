@@ -3,11 +3,11 @@ package cn.lunadeer.mc.deerlingbot;
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import cn.lunadeer.mc.deerlingbot.managers.PlaceHolderApiManager;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.TextSegment;
 
 public class JoinLeaveEvents implements Listener {
 
@@ -19,7 +19,7 @@ public class JoinLeaveEvents implements Listener {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
             message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
 
-        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), TextSegment(message));
+        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), new TextSegment(message));
     }
 
     @EventHandler
@@ -30,6 +30,6 @@ public class JoinLeaveEvents implements Listener {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
             message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
 
-        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), TextSegment(message));
+        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), new TextSegment(message));
     }
 }

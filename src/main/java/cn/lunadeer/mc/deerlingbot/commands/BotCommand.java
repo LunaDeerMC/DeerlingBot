@@ -4,13 +4,14 @@ import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
-import com.alibaba.fastjson2.JSONObject;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.ReplySegment;
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.TextSegment;
 
 /**
  * Abstract class representing a bot command.
@@ -57,37 +58,33 @@ public abstract class BotCommand {
         this.bindRequired = bindRequired;
     }
 
-    /**
-     * Executes the command logic after performing any necessary pre-processing.
-     *
-     * @param commandText The full text of the command as entered by the user.
-     * @param jsonObject  A raw one bot v11 protocol JSON object received from the bot.
-     */
-    public void run(String commandText, JSONObject jsonObject) {
+    public void run(Message messageEvent, String... args) {
         // some pre-processing
-        JSONObject sender = jsonObject.getJSONObject("sender");
-        if (sender == null) return;
-        if (!sender.containsKey("user_id")) return;
-        long userID = sender.getLong("user_id");
-        if (!jsonObject.containsKey("message_id")) return;
-        long messageID = jsonObject.getLong("message_id");
+        long userID = messageEvent.getUserId();
+        long messageID = messageEvent.getMessageId();
 
         // group only
         Long groupID = null;
-        if (jsonObject.containsKey("group_id")) {
-            groupID = jsonObject.getLong("group_id");
+        if (messageEvent instanceof GroupMessage groupMessageEvent) {
+            groupID = groupMessageEvent.getGroupID();
             if (!Configuration.groupList.contains(String.valueOf(groupID))) return;
         } else if (groupOnly) {
-            PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.groupOnly));
+            PrivateOperation.SendPrivateMessage(userID,
+                    new ReplySegment(messageID),
+                    new TextSegment(MessageText.botCommandText.groupOnly));
             return;
         }
 
         // admin only
         if (adminOnly && !Configuration.adminAccountList.contains(String.valueOf(userID))) {
             if (groupID != null) {
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.adminOnly));
+                GroupOperation.SendGroupMessage(groupID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.botCommandText.adminOnly));
             } else {
-                PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.adminOnly));
+                PrivateOperation.SendPrivateMessage(userID,
+                        new ReplySegment(messageID),
+                        new TextSegment(MessageText.botCommandText.adminOnly));
             }
             return;
         }
@@ -96,16 +93,20 @@ public abstract class BotCommand {
         try {
             if (bindRequired && !WhitelistTable.getInstance().isBind(userID)) {
                 if (groupID != null) {
-                    GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.bindRequired));
+                    GroupOperation.SendGroupMessage(groupID,
+                            new ReplySegment(messageID),
+                            new TextSegment(MessageText.botCommandText.bindRequired));
                 } else {
-                    PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(MessageText.botCommandText.bindRequired));
+                    PrivateOperation.SendPrivateMessage(userID,
+                            new ReplySegment(messageID),
+                            new TextSegment(MessageText.botCommandText.bindRequired));
                 }
                 return;
             }
-            if (bindRequired && Configuration.syncCardName && groupID != null) {
-                String cardName = sender.getString("card");
+            if (bindRequired && Configuration.syncCardName && messageEvent instanceof GroupMessage groupMessageEvent) {
+                String cardName = groupMessageEvent.getSender().getCard();
                 String playerName = WhitelistTable.getInstance().getLastKnownName(userID);
-                if (cardName == null || !cardName.equals(playerName)) {
+                if (!cardName.equals(playerName)) {
                     GroupOperation.SetGroupCard(groupID, userID, playerName);
                 }
             }
@@ -115,16 +116,10 @@ public abstract class BotCommand {
             return;
         }
 
-        handle(userID, commandText, jsonObject);
+        handle(messageEvent, args);
     }
 
-    /**
-     * Executes the command logic.
-     *
-     * @param commandText The full text of the command as entered by the user.
-     * @param jsonObject  A raw one bot v11 protocol JSON object received from the bot.
-     */
-    public abstract void handle(long userId, String commandText, JSONObject jsonObject);
+    public abstract void handle(Message messageEvent, String... args);
 
     /**
      * Gets the name of the command.

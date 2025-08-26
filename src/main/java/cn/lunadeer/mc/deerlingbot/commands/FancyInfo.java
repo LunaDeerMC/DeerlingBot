@@ -6,9 +6,13 @@ import cn.lunadeer.mc.deerlingbot.managers.TemplateFactory;
 import cn.lunadeer.mc.deerlingbot.managers.WebDriverManager;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ImageSegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
-import com.alibaba.fastjson2.JSONObject;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Statistic;
@@ -17,7 +21,6 @@ import org.bukkit.entity.Player;
 import java.awt.image.BufferedImage;
 import java.util.UUID;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.*;
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.*;
 
 @FancyCommand
@@ -30,12 +33,12 @@ public class FancyInfo extends BotCommand {
     }
 
     @Override
-    public void handle(long userId, String commandText, JSONObject jsonObject) {
+    public void handle(Message messageEvent, String... args) {
         UUID uuid;
         String lastKnownName;
         String status;
         try {
-            uuid = WhitelistTable.getInstance().getUserUUID(userId);
+            uuid = WhitelistTable.getInstance().getUserUUID(messageEvent.getUserId());
             lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
             Player player = DeerlingBot.getInstance().getServer().getOnlinePlayers().stream()
                     .filter(p -> p.getUniqueId().equals(uuid))
@@ -53,9 +56,7 @@ public class FancyInfo extends BotCommand {
 
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
-
-        if (!jsonObject.containsKey("message_id")) return;
-        long messageID = jsonObject.getLong("message_id");
+        long messageID = messageEvent.getMessageId();
 
         try (TemplateFactory userInfo = new TemplateFactory(template)) {
             // /papi ecloud download Statistic
@@ -71,11 +72,15 @@ public class FancyInfo extends BotCommand {
             ;
             offlinePlayer.getStatistic(Statistic.MOB_KILLS);
             BufferedImage userInfoImage = WebDriverManager.getInstance().takeScreenshot(userInfo.build(offlinePlayer), template);
-            if (jsonObject.containsKey("group_id")) {
-                long groupID = jsonObject.getLong("group_id");
-                GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), userInfoImage != null ? ImageSegment(userInfoImage) : TextSegment("出错了，请联系管理员"));
+            if (messageEvent instanceof GroupMessage groupMessage) {
+                long groupID = groupMessage.getGroupID();
+                GroupOperation.SendGroupMessage(groupID,
+                        new ReplySegment(messageID), userInfoImage != null ?
+                                new ImageSegment(userInfoImage) : new TextSegment("出错了，请联系管理员"));
             } else {
-                PrivateOperation.SendPrivateMessage(userId, ReplySegment(messageID), userInfoImage != null ? ImageSegment(userInfoImage) : TextSegment("出错了，请联系管理员"));
+                PrivateOperation.SendPrivateMessage(messageEvent.getUserId(),
+                        new ReplySegment(messageID), userInfoImage != null ?
+                                new ImageSegment(userInfoImage) : new TextSegment("出错了，请联系管理员"));
             }
         } catch (Exception e) {
             XLogger.error("Failed to generate user info image");

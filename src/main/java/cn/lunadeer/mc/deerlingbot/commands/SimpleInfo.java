@@ -3,9 +3,14 @@ package cn.lunadeer.mc.deerlingbot.commands;
 import cn.lunadeer.mc.deerlingbot.DeerlingBot;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ImageSegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageSegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
-import com.alibaba.fastjson2.JSONObject;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
@@ -17,7 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.*;
 
 public class SimpleInfo extends BotCommand {
     public SimpleInfo() {
@@ -25,10 +29,11 @@ public class SimpleInfo extends BotCommand {
     }
 
     @Override
-    public void handle(long userId, String commandText, JSONObject jsonObject) {
+    public void handle(Message messageEvent, String... args) {
         UUID uuid;
         String lastKnownName;
         String status;
+        long userId = messageEvent.getUserId();
         try {
             uuid = WhitelistTable.getInstance().getUserUUID(userId);
             lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
@@ -55,22 +60,21 @@ public class SimpleInfo extends BotCommand {
 
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
-        if (!jsonObject.containsKey("message_id")) return;
-        long messageID = jsonObject.getLong("message_id");
-        List<JSONObject> playerInfos = new ArrayList<>();
-        playerInfos.add(ReplySegment(messageID));
+        long messageID = messageEvent.getMessageId();
+        List<MessageSegment> playerInfos = new ArrayList<>();
+        playerInfos.add(new ReplySegment(messageID));
         if (headImage != null) {
-            playerInfos.add(ImageSegment(headImage));
+            playerInfos.add(new ImageSegment(headImage));
         }
-        playerInfos.add(TextSegment("【游戏昵称】：" + lastKnownName + "\n"));
-        playerInfos.add(TextSegment("【UUID】：" + uuid + "\n"));
-        playerInfos.add(TextSegment(status + "\n"));
+        playerInfos.add(new TextSegment("【游戏昵称】：" + lastKnownName + "\n"));
+        playerInfos.add(new TextSegment("【UUID】：" + uuid + "\n"));
+        playerInfos.add(new TextSegment(status + "\n"));
 
-        if (jsonObject.containsKey("group_id")) {
-            long groupID = jsonObject.getLong("group_id");
-            GroupOperation.SendGroupMessage(groupID, playerInfos.toArray(new JSONObject[0]));
+        if (messageEvent instanceof GroupMessage groupMessage) {
+            long groupID = groupMessage.getGroupID();
+            GroupOperation.SendGroupMessage(groupID, playerInfos.toArray(new MessageSegment[0]));
         } else {
-            PrivateOperation.SendPrivateMessage(userId, playerInfos.toArray(new JSONObject[0]));
+            PrivateOperation.SendPrivateMessage(userId, playerInfos.toArray(new MessageSegment[0]));
         }
     }
 }

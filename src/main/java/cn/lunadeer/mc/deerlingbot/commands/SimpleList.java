@@ -4,15 +4,15 @@ import cn.lunadeer.mc.deerlingbot.DeerlingBot;
 import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
-import cn.lunadeer.mc.deerlingbot.utils.XLogger;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
-import com.alibaba.fastjson2.JSONObject;
 import org.bukkit.entity.Player;
 
 import java.util.Collection;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.ReplySegment;
-import static cn.lunadeer.mc.deerlingbot.protocols.MessageSegment.TextSegment;
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.formatString;
 
 public class SimpleList extends BotCommand {
@@ -26,22 +26,23 @@ public class SimpleList extends BotCommand {
     }
 
     @Override
-    public void handle(long userId, String commandText, JSONObject jsonObject) {
+    public void handle(Message messageEvent, String... args) {
         Collection<? extends Player> players = DeerlingBot.getInstance().getServer().getOnlinePlayers();
         StringBuilder playerList = new StringBuilder(formatString(MessageText.listPlayerText.listPlayer, players.size()));
         for (Player player : players) {
             playerList.append(player.getName()).append("\n");
         }
-        if (!jsonObject.containsKey("message_id")) return;
-        long messageID = jsonObject.getLong("message_id");
-        if (jsonObject.containsKey("group_id")) {
-            long groupID = jsonObject.getLong("group_id");
-            GroupOperation.SendGroupMessage(groupID, ReplySegment(messageID), TextSegment(playerList.toString()));
-        } else if (jsonObject.containsKey("user_id")) {
-            long userID = jsonObject.getLong("user_id");
-            PrivateOperation.SendPrivateMessage(userID, ReplySegment(messageID), TextSegment(playerList.toString()));
+        long messageID = messageEvent.getMessageId();
+        if (messageEvent instanceof GroupMessage groupMessage) {
+            long groupID = groupMessage.getGroupID();
+            GroupOperation.SendGroupMessage(groupID,
+                    new ReplySegment(messageID),
+                    new TextSegment(playerList.toString()));
         } else {
-            XLogger.warn("No group_id or user_id found in JSON object");
+            long userID = messageEvent.getUserId();
+            PrivateOperation.SendPrivateMessage(userID,
+                    new ReplySegment(messageID),
+                    new TextSegment(playerList.toString()));
         }
     }
 }
