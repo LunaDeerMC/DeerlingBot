@@ -106,53 +106,6 @@ public class CoreConnector {
             }
 
             return null;
-
-//            if (!jsonObject.containsKey("self_id")) return null;
-//            if (!jsonObject.getLong("self_id").equals(Long.parseLong(Configuration.botId))) return null;
-//
-//            XLogger.debug("收到消息: {0}", sqlStr);
-//
-//            JSONArray message = jsonObject.getJSONArray("message");
-//            if (message != null && !message.isEmpty()) {
-//                return null;
-//            } else if (message != null && !message.isEmpty()) {
-//                JSONObject firstMessage = message.getJSONObject(0);
-//                if (firstMessage == null) return null;
-//                if (!firstMessage.containsKey("type")) return null;
-//                if (!firstMessage.getString("type").equals("text")) return null;
-//                if (!firstMessage.containsKey("data")) return null;
-//                JSONObject data = firstMessage.getJSONObject("data");
-//                if (data == null) return null;
-//                if (!data.containsKey("text")) return null;
-//                String text = data.getString("text");
-//                if (text == null) return null;
-//
-//                if (text.startsWith(Configuration.commandPrefix)) {
-//                    CommandManager.getInstance().handleBotCommand(text, jsonObject);
-//                } else {
-//                    if (!jsonObject.containsKey("group_id")) return null;
-//                    if (!jsonObject.getLong("group_id").equals(Long.parseLong(Configuration.messageTransfer.groupId)))
-//                        return null;
-//                    long groupID = jsonObject.getLong("group_id");
-//
-//                    JSONObject sender = jsonObject.getJSONObject("sender");
-//                    if (sender == null) return null;
-//
-//                    if (!sender.containsKey("user_id")) return null;
-//                    long userID = sender.getLong("user_id");
-//
-//                    if (!sender.containsKey("nickname")) return null;
-//                    String nickname = sender.getString("nickname");
-//
-//                    if (!jsonObject.containsKey("message_id")) return null;
-//                    long messageID = jsonObject.getLong("message_id");
-//
-//                    MessageManager.getInstance().handleGroupMessageToServer(groupID, userID, messageID, nickname, text);
-//                }
-//                return null;
-//            } else {
-//                return null;
-//            }
         }
     };
 
