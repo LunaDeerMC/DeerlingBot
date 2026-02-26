@@ -15,8 +15,7 @@ import java.net.URI;
 import java.net.http.WebSocket;
 import java.util.concurrent.CompletionStage;
 
-import static cn.lunadeer.mc.deerlingbot.protocols.events.AbstractPost.PostType.message;
-import static cn.lunadeer.mc.deerlingbot.protocols.events.AbstractPost.PostType.notice;
+import static cn.lunadeer.mc.deerlingbot.protocols.events.AbstractPost.PostType.*;
 import static cn.lunadeer.mc.deerlingbot.protocols.events.notice.NoticeType.*;
 
 public class CoreConnector {
@@ -100,7 +99,17 @@ public class CoreConnector {
                 } else {
                     return null;
                 }
-
+            } else if (meta_event.name().equals(postType)) {
+                XLogger.debug("收到 meta_event: " + sqlStr);
+                String metaEventType = jsonObject.getString("meta_event_type");
+                if (metaEventType.equals("lifecycle")) {
+                    String subType = jsonObject.getString("sub_type");
+                    if (subType.equals("connect")) {
+                        XLogger.info("连接成功，原始数据：" + sqlStr);
+                    } else if (subType.equals("heartbeat")) {
+                        XLogger.debug("收到心跳事件，原始数据：" + sqlStr);
+                    }
+                }
             } else {
                 XLogger.warn("未知的 post_type: " + postType + "，原始数据：" + sqlStr);
             }
