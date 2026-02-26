@@ -9,7 +9,6 @@ import cn.lunadeer.mc.deerlingbot.protocols.events.message.PrivateMessage;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageSegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
-import com.alibaba.fastjson2.JSONObject;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -62,7 +61,7 @@ public class CommandManager implements Listener {
         String commandsStr = commandSplit[0];
         for (BotCommand command : commands) {
             if (commandsStr.equalsIgnoreCase(command.getCommand())) {
-                command.run(event, commandArgs);
+                command.runAsync(event, commandArgs);
                 return;
             }
         }

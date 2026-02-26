@@ -1,6 +1,6 @@
 package cn.lunadeer.mc.deerlingbot.protocols.events;
 
-import org.bukkit.event.Cancellable;
+import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
 import org.jetbrains.annotations.NotNull;
@@ -42,12 +42,8 @@ public abstract class AbstractPost extends Event {
      * @return true if the event was successfully executed, false if the event was cancelled
      */
     public boolean call() {
-        org.bukkit.Bukkit.getPluginManager().callEvent(this);
-        if (this instanceof Cancellable) {
-            return !((Cancellable) this).isCancelled();
-        } else {
-            return true;
-        }
+        Scheduler.runTask(() -> org.bukkit.Bukkit.getPluginManager().callEvent(this));
+        return true;
     }
 
     private final long time;

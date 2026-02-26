@@ -105,13 +105,13 @@ public class CoreConnector {
                 if (metaEventType.equals("lifecycle")) {
                     String subType = jsonObject.getString("sub_type");
                     if (subType.equals("connect")) {
-                        XLogger.info("连接成功，原始数据：" + sqlStr);
+                        XLogger.debug("连接成功，原始数据：" + sqlStr);
                     } else if (subType.equals("heartbeat")) {
                         XLogger.debug("收到心跳事件，原始数据：" + sqlStr);
                     }
                 }
             } else {
-                XLogger.warn("未知的 post_type: " + postType + "，原始数据：" + sqlStr);
+                XLogger.debug("未知的 post_type: " + postType + "，原始数据：" + sqlStr);
             }
 
             return null;

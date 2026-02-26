@@ -11,6 +11,7 @@ import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
+import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 
 
 /**
@@ -58,7 +59,11 @@ public abstract class BotCommand {
         this.bindRequired = bindRequired;
     }
 
-    public void run(Message messageEvent, String... args) {
+    public void runAsync(Message messageEvent, String... args) {
+        Scheduler.runTaskAsync(() -> run(messageEvent, args));
+    }
+
+    private void run(Message messageEvent, String... args) {
         // some pre-processing
         long userID = messageEvent.getUserId();
         long messageID = messageEvent.getMessageId();
