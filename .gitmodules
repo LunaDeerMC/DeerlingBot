@@ -1,3 +1,6 @@
 [submodule "resources"]
 	path = resources
 	url = https://github.com/LunaDeerMC/DeerlingBot_resources.git
+[submodule "onebot-11-ref"]
+	path = onebot-11-ref
+	url = https://github.com/botuniverse/onebot-11.git
