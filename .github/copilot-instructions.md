@@ -2,54 +2,39 @@
 
 ## Overview
 
-Paper/Bukkit Minecraft plugin (Java 17) bridging QQ groups and Minecraft via OneBot 11 WebSocket protocol. Comments and user-facing strings are in **Chinese (Simplified)**.
+Paper/Bukkit Minecraft plugin targeting Java 17. It bridges QQ groups and Minecraft through the OneBot 11 WebSocket protocol. Keep comments and user-facing text in Chinese (Simplified).
 
 ## Architecture
 
-- **Entry point**: [DeerlingBot.java](src/main/java/cn/lunadeer/mc/deerlingbot/DeerlingBot.java) — `JavaPlugin`, manually wires all singletons in `onEnable()`
-- **Singleton pattern**: Managers use `instance = this;` in constructor + `static getInstance()` — no DI framework
-- **Event bridge**: OneBot WebSocket messages are parsed into **Bukkit Events** (`AbstractPost` extends `Event`), dispatched via `Bukkit.getPluginManager().callEvent()`, and handled with `@EventHandler` listeners
-- **Managers** (`managers/`): `CoreConnector` (WebSocket), `CommandManager` (reflexive command loading), `MessageManager` (bidirectional group↔server chat), `BindManager` (QQ↔player binding), `TemplateFactory` (HTML templates), `WebDriverManager` (headless Chrome screenshots)
-- **Protocols** (`protocols/`): OneBot 11 segments (`TextSegment`, `ImageSegment`, `MentionSegment`, `ReplySegment`), events (`GroupMessage`, `PrivateMessage`, notice types), and outbound operations (`GroupOperation`, `PrivateOperation`)
-- **Utils** (`utils/`): Custom SQL builder in `utils/databse/` (note: intentional typo in package name), reflection-based YAML config in `utils/configuration/`, Folia/Spigot-aware scheduler in `utils/scheduler/`, Bukkit command framework in `utils/command/`
+- Entry point: [src/main/java/cn/lunadeer/mc/deerlingbot/DeerlingBot.java](../src/main/java/cn/lunadeer/mc/deerlingbot/DeerlingBot.java). `onEnable()` manually wires all managers and the startup order matters because the project uses eager singletons instead of DI.
+- OneBot messages are received in `CoreConnector`, parsed into subclasses of `AbstractPost`, then dispatched as Bukkit events via `Bukkit.getPluginManager().callEvent()`.
+- Reuse the existing subsystems instead of bypassing them: `CommandManager` for command discovery, `Scheduler` for async/delayed work, `DatabaseManager` plus table classes for persistence, and `WebDriverManager` for screenshot-based fancy commands.
+- PlaceholderAPI is optional. Chrome/WebDriver resources are external runtime dependencies managed by the plugin.
 
 ## Code Style
 
-- **Java 17 features**: records, pattern matching for `instanceof`, switch expressions, `String.formatted()`, `List.of()`
-- **Static operations**: PascalCase for outbound protocol methods (`SendGroupMessage`, `SetGroupCard`) — see [GroupOperation.java](src/main/java/cn/lunadeer/mc/deerlingbot/protocols/GroupOperation.java)
-- **Logging**: Use `XLogger.info/warn/error/debug` with `{0}`, `{1}` placeholder formatting — never `System.out`
-- **JSON**: fastjson2 (`com.alibaba.fastjson2.JSONObject/JSONArray`) for all OneBot serialization
-- **Config**: Static fields + annotations (`@Comments`, `@HandleManually`, `@PostProcess`) on `ConfigurationPart` classes. Keys auto-convert camelCase→kebab-case — see [Configuration.java](src/main/java/cn/lunadeer/mc/deerlingbot/configuration/Configuration.java)
-- **Database**: Fluent SQL builder (`Select.select(...).from(...).where(...).execute()`), supports SQLite/MySQL/PostgreSQL via `DatabaseManager`. Schema defined programmatically in table classes — see [WhitelistTable.java](src/main/java/cn/lunadeer/mc/deerlingbot/tables/WhitelistTable.java)
+- Prefer existing Java 17 idioms already used in the repo.
+- Use `XLogger.info/warn/error/debug` with `{0}`, `{1}` placeholders. Do not use `System.out`.
+- Use fastjson2 `JSONObject` and `JSONArray` for OneBot payload serialization.
+- Keep outbound protocol helper naming consistent with the existing PascalCase static methods such as [src/main/java/cn/lunadeer/mc/deerlingbot/protocols/GroupOperation.java](../src/main/java/cn/lunadeer/mc/deerlingbot/protocols/GroupOperation.java).
+- Follow the existing configuration pattern in [src/main/java/cn/lunadeer/mc/deerlingbot/configuration/Configuration.java](../src/main/java/cn/lunadeer/mc/deerlingbot/configuration/Configuration.java): `public static` fields, configuration annotations, and automatic camelCase-to-kebab-case YAML keys.
 
 ## Build and Test
 
-```sh
-# Build (shadow JAR) — outputs to build/libs/
-./gradlew shadowJar
+- Preferred build commands: `./gradlew Clean&Build` or `./gradlew shadowJar`. On Windows use `gradlew.bat`.
+- Build output is `build/libs/DeerlingBot-<version>-{lite|full}.jar`.
+- `BuildFull=false` by default. Set it to `true` in `gradle.properties` when you need a fully shaded jar.
+- Running the build updates [version.properties](../version.properties) based on the current git branch, so a normal build can dirty the worktree.
+- There is no automated test suite in this repo.
 
-# Lite build (default, BuildFull=false): libraries as compileOnly, downloaded by server
-# Full build: set BuildFull=true in gradle.properties to shadow all deps
+## Conventions
 
-# Clean + build
-./gradlew clean shadowJar
-```
+- New bot commands should extend `BotCommand` in `commands/`. Use `@FancyCommand` for commands that depend on Chrome screenshot rendering.
+- New OneBot events should extend `AbstractPost`, be parsed in `CoreConnector.onMessage()`, and be handled through the Bukkit event system.
+- Always use [src/main/java/cn/lunadeer/mc/deerlingbot/utils/scheduler/Scheduler.java](../src/main/java/cn/lunadeer/mc/deerlingbot/utils/scheduler/Scheduler.java) instead of the Bukkit scheduler directly so Folia/Paper compatibility is preserved.
+- The package names `utils/databse/` and `utils/databse/FIelds/` are established typos. Do not rename them casually.
 
-- Output: `DeerlingBot-<version>-{full|lite}.jar`
-- Versioning: auto from git branch — `master` → beta, `dev/*` → alpha.N (see [version.properties](version.properties))
-- No test suite currently exists
+## References
 
-## Project Conventions
-
-- **Bot commands**: Extend `BotCommand`, placed in `commands/` package — auto-discovered via reflection at startup. Use `@FancyCommand` annotation for Chrome-dependent commands
-- **New OneBot events**: Extend `AbstractPost` (for Bukkit Event integration), parse in `CoreConnector.onMessage()`, add corresponding handler with `@EventHandler`
-- **New config fields**: Add `public static` fields to `Configuration` or `MessageText` inner classes. Use `@Comments` for YAML doc comments
-- **Platform compat**: Always use `Scheduler` from `utils/scheduler/` for async/delayed tasks — never Bukkit scheduler directly (Folia support)
-- **Package typos**: `utils/databse/` and `utils/databse/FIelds/` — these are established names, do not rename without a migration plan
-
-## Integration Points
-
-- **OneBot 11**: WebSocket connection to QQ bot backend (NapCat/go-cqhttp/etc.) — configured via `Configuration.oneBotWebSocket`
-- **PlaceholderAPI**: Optional integration for message formatting and template rendering
-- **Selenium/Chrome**: Headless browser at `plugins/DeerlingBot/libs/chrome/chrome` for HTML→image rendering
-- **External resources**: Templates and libs downloaded from `LunaDeerMC/DeerlingBot_resources` GitHub releases
+- OneBot 11 reference docs live under [onebot-11-ref/README.md](../onebot-11-ref/README.md).
+- Linux Chrome dependency notes for fancy commands are in [常见缺少库与安装方式.md](../常见缺少库与安装方式.md).
