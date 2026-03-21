@@ -3,6 +3,8 @@ package cn.lunadeer.mc.deerlingbot;
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import cn.lunadeer.mc.deerlingbot.managers.PlaceHolderApiManager;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupIncrease;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.MentionSegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
@@ -31,5 +33,20 @@ public class JoinLeaveEvents implements Listener {
             message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
 
         GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), new TextSegment(message));
+    }
+
+    @EventHandler
+    public void onGroupIncrease(GroupIncrease event) {
+        if (!Configuration.groupWelcomeMessage.enable) return;
+        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId()))) return;
+
+        String message = Configuration.groupWelcomeMessage.getMessage(event.getUserId(), event.getGroupId()).trim();
+        if (message.isEmpty()) return;
+
+        GroupOperation.SendGroupMessage(
+                event.getGroupId(),
+                new MentionSegment(event.getUserId()),
+                new TextSegment("\n" + message)
+        );
     }
 }

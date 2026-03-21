@@ -134,6 +134,31 @@ public class Configuration extends ConfigurationFile {
         public String quitMessage = "✖ [%player_name%] 离开了服务器";
     }
 
+    @Comments("群聊入群欢迎消息设置")
+    public static GroupWelcomeMessage groupWelcomeMessage = new GroupWelcomeMessage();
+
+    public static class GroupWelcomeMessage extends ConfigurationPart {
+        @Comment("是否启用新用户进群欢迎")
+        public boolean enable = true;
+
+        @Comments({
+                "欢迎消息内容，支持多行",
+                "会自动在消息前 @ 新用户",
+                "可用变量：%user_id%, %group_id%"
+        })
+        public List<String> message = List.of(
+                "欢迎加入本群！",
+                "请先阅读群公告和群规则。"
+        );
+
+        @HandleManually
+        public String getMessage(long userId, long groupId) {
+            return String.join("\n", message)
+                    .replace("%user_id%", String.valueOf(userId))
+                    .replace("%group_id%", String.valueOf(groupId));
+        }
+    }
+
     @Comment("是否强制设置群名片为玩家昵称(当玩家绑定时)")
     public static boolean syncCardName = true;
 
