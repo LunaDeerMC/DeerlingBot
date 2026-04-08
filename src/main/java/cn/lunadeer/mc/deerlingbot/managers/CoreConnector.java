@@ -7,6 +7,7 @@ import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupAdmin;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupBan;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupIncrease;
+import cn.lunadeer.mc.deerlingbot.protocols.events.request.GroupRequest;
 import cn.lunadeer.mc.deerlingbot.utils.AutoReconnectWebSocket;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import com.alibaba.fastjson2.JSONObject;
@@ -96,6 +97,13 @@ public class CoreConnector {
                     GroupDecrease.parse(jsonObject).call();
                 } else if (group_ban.name().equals(noticeType)) {
                     GroupBan.parse(jsonObject).call();
+                } else {
+                    return null;
+                }
+            } else if (request.name().equals(postType)) {
+                String requestType = jsonObject.getString("request_type");
+                if ("group".equals(requestType)) {
+                    GroupRequest.parse(jsonObject).call();
                 } else {
                     return null;
                 }

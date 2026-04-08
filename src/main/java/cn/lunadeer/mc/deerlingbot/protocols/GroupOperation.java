@@ -38,4 +38,27 @@ public class GroupOperation {
         jsonObject.put("params", params);
         CoreConnector.getInstance().send(jsonObject);
     }
+
+    public static void SetGroupKick(long groupID, long userID, boolean rejectAddRequest) {
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("action", "set_group_kick");
+        JSONObject params = new JSONObject();
+        params.put("group_id", groupID);
+        params.put("user_id", userID);
+        params.put("reject_add_request", rejectAddRequest);
+        jsonObject.put("params", params);
+        CoreConnector.getInstance().send(jsonObject);
+    }
+
+    public static void SetGroupAddRequest(String flag, String subType, boolean approve, String reason) {
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("action", "set_group_add_request");
+        JSONObject params = new JSONObject();
+        params.put("flag", flag);
+        params.put("sub_type", subType);
+        params.put("approve", approve);
+        params.put("reason", reason == null ? "" : reason);
+        jsonObject.put("params", params);
+        CoreConnector.getInstance().send(jsonObject);
+    }
 }
