@@ -3,7 +3,9 @@ package cn.lunadeer.mc.deerlingbot;
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import cn.lunadeer.mc.deerlingbot.managers.PlaceHolderApiManager;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
+import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
+import cn.lunadeer.mc.deerlingbot.protocols.events.message.PrivateMessage;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupIncrease;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.MentionSegment;
@@ -17,11 +19,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
-
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
-
 
 public class JoinLeaveEvents implements Listener {
 
@@ -32,6 +34,9 @@ public class JoinLeaveEvents implements Listener {
     }
 
     private record MathQuestion(String expression, int answer) {
+    }
+
+    private record PrivateReviewAttempt(Long groupId, String answerText) {
     }
 
     private static final class PendingReview {
@@ -46,29 +51,34 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onPlayerJoin(org.bukkit.event.player.PlayerJoinEvent event) {
-        if (!Configuration.joinQuitMessage.enable) return;
+        if (!Configuration.joinQuitMessage.enable)
+            return;
         String message = Configuration.joinQuitMessage.joinMessage;
         message = message.replace("%player_name%", event.getPlayer().getName());
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
             message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
 
-        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), new TextSegment(message));
+        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId),
+                new TextSegment(message));
     }
 
     @EventHandler
     public void onPlayerQuit(org.bukkit.event.player.PlayerQuitEvent event) {
-        if (!Configuration.joinQuitMessage.enable) return;
+        if (!Configuration.joinQuitMessage.enable)
+            return;
         String message = Configuration.joinQuitMessage.quitMessage;
         message = message.replace("%player_name%", event.getPlayer().getName());
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
             message = PlaceHolderApiManager.setPlaceholders(event.getPlayer(), message);
 
-        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId), new TextSegment(message));
+        GroupOperation.SendGroupMessage(Long.parseLong(Configuration.joinQuitMessage.groupId),
+                new TextSegment(message));
     }
 
     @EventHandler
     public void onGroupIncrease(GroupIncrease event) {
-        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId()))) return;
+        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId())))
+            return;
 
         if (Configuration.postJoinReview.enable && event.getSubType() == GroupIncrease.SubType.approve) {
             startPostJoinReview(event.getGroupId(), event.getUserId());
@@ -85,9 +95,12 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onGroupRequest(GroupRequest event) {
-        if (!Configuration.postJoinReview.enable) return;
-        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId()))) return;
-        if (event.getSubType() != GroupRequest.SubType.add) return;
+        if (!Configuration.postJoinReview.enable)
+            return;
+        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId())))
+            return;
+        if (event.getSubType() != GroupRequest.SubType.add)
+            return;
 
         GroupOperation.SetGroupAddRequest(event.getFlag(), event.getSubType().name(), true, "");
         XLogger.info("已自动通过群 {0} 的加群申请，用户 {1}", event.getGroupId(), event.getUserId());
@@ -95,28 +108,48 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onGroupMessage(GroupMessage event) {
-        ReviewKey key = new ReviewKey(event.getGroupID(), event.getUserId());
-        PendingReview pendingReview = pendingReviews.get(key);
-        if (pendingReview == null) return;
-
-        String rawMessage = event.getRawMessage();
-        if (rawMessage == null) return;
-
-        String normalizedMessage = rawMessage.trim();
-        if (normalizedMessage.isEmpty()) return;
-
-        if (normalizedMessage.equals(String.valueOf(pendingReview.question.answer()))) {
-            completePostJoinReview(key);
+        if (Configuration.postJoinReview.usePrivateMessage)
             return;
-        }
 
-        if (!normalizedMessage.matches("-?\\d+")) return;
+        ReviewKey key = new ReviewKey(event.getGroupID(), event.getUserId());
+        String normalizedMessage = normalizeReviewMessage(event.getRawMessage());
+        if (normalizedMessage == null)
+            return;
 
-        GroupOperation.SendGroupMessage(
-                event.getGroupID(),
-                new ReplySegment(event.getMessageId()),
-                new TextSegment("答案不正确，请直接发送算式结果。")
-        );
+        handleReviewAnswer(
+                key,
+                normalizedMessage,
+                () -> GroupOperation.SendGroupMessage(
+                        event.getGroupID(),
+                        new ReplySegment(event.getMessageId()),
+                        new TextSegment("答案不正确，请直接发送算式结果。")));
+    }
+
+    @EventHandler
+    public void onPrivateMessage(PrivateMessage event) {
+        if (!Configuration.postJoinReview.usePrivateMessage)
+            return;
+
+        String normalizedMessage = normalizeReviewMessage(event.getRawMessage());
+        if (normalizedMessage == null)
+            return;
+
+        PrivateReviewAttempt attempt = parsePrivateReviewAttempt(normalizedMessage);
+        if (attempt == null)
+            return;
+
+        List<ReviewKey> userReviews = findPendingReviewsByUserId(event.getUserId());
+        if (userReviews.isEmpty())
+            return;
+
+        ReviewKey key = resolvePrivateReviewKey(event.getUserId(), attempt, userReviews);
+        if (key == null)
+            return;
+
+        handleReviewAnswer(
+                key,
+                attempt.answerText(),
+                () -> PrivateOperation.SendPrivateMessage(event.getUserId(), "答案不正确，请直接发送算式结果。"));
     }
 
     private void startPostJoinReview(long groupId, long userId) {
@@ -127,17 +160,18 @@ public class JoinLeaveEvents implements Listener {
         CancellableTask timeoutTask = Scheduler.runTaskLater(() -> timeoutPostJoinReview(key), REVIEW_TIMEOUT_TICKS);
         pendingReviews.put(key, new PendingReview(question, timeoutTask));
 
-        GroupOperation.SendGroupMessage(
+        sendReviewQuestion(groupId, userId, question);
+        XLogger.info(
+                "已向群 {0} 的新成员 {1} 发起后置审核，发送方式：{2}",
                 groupId,
-                new MentionSegment(userId),
-                new TextSegment("\n入群后置审核：请在 300 秒内直接发送下面算式的结果，超时将被自动移出群聊。\n" + question.expression() + " = ?")
-        );
-        XLogger.info("已向群 {0} 的新成员 {1} 发起后置审核", groupId, userId);
+                userId,
+                Configuration.postJoinReview.usePrivateMessage ? "私聊" : "群聊");
     }
 
     private void completePostJoinReview(ReviewKey key) {
         PendingReview pendingReview = pendingReviews.remove(key);
-        if (pendingReview == null) return;
+        if (pendingReview == null)
+            return;
         if (pendingReview.timeoutTask != null) {
             pendingReview.timeoutTask.cancel();
         }
@@ -148,41 +182,133 @@ public class JoinLeaveEvents implements Listener {
             GroupOperation.SendGroupMessage(
                     key.groupId(),
                     new MentionSegment(key.userId()),
-                    new TextSegment("\n审核通过，欢迎加入本群。")
-            );
+                    new TextSegment("\n审核通过，欢迎加入本群。"));
         }
         XLogger.info("群 {0} 的新成员 {1} 已通过后置审核", key.groupId(), key.userId());
     }
 
     private void timeoutPostJoinReview(ReviewKey key) {
         PendingReview pendingReview = pendingReviews.remove(key);
-        if (pendingReview == null) return;
+        if (pendingReview == null)
+            return;
 
         GroupOperation.SetGroupKick(key.groupId(), key.userId(), false);
         GroupOperation.SendGroupMessage(
                 key.groupId(),
-                new TextSegment("用户 " + key.userId() + " 未在 300 秒内通过后置审核，已自动移出群聊。")
-        );
+                new TextSegment("用户 " + key.userId() + " 未在 300 秒内通过后置审核，已自动移出群聊。"));
         XLogger.warn("群 {0} 的新成员 {1} 未通过后置审核，已自动移出群聊", key.groupId(), key.userId());
     }
 
     private void clearPendingReview(long groupId, long userId) {
         PendingReview pendingReview = pendingReviews.remove(new ReviewKey(groupId, userId));
-        if (pendingReview == null || pendingReview.timeoutTask == null) return;
+        if (pendingReview == null || pendingReview.timeoutTask == null)
+            return;
         pendingReview.timeoutTask.cancel();
     }
 
-    private void sendWelcomeMessage(long userId, long groupId) {
-        if (!Configuration.groupWelcomeMessage.enable) return;
+    private void handleReviewAnswer(ReviewKey key, String normalizedMessage, Runnable wrongAnswerAction) {
+        PendingReview pendingReview = pendingReviews.get(key);
+        if (pendingReview == null)
+            return;
 
-        String message = Configuration.groupWelcomeMessage.getMessage(userId, groupId).trim();
-        if (message.isEmpty()) return;
+        if (normalizedMessage.equals(String.valueOf(pendingReview.question.answer()))) {
+            completePostJoinReview(key);
+            return;
+        }
+
+        if (!normalizedMessage.matches("-?\\d+"))
+            return;
+
+        wrongAnswerAction.run();
+    }
+
+    private void sendReviewQuestion(long groupId, long userId, MathQuestion question) {
+        if (Configuration.postJoinReview.usePrivateMessage) {
+            PrivateOperation.SendPrivateMessage(
+                    userId,
+                    "入群后置审核：你正在为群 " + groupId + " 完成验证。\n"
+                            + "请在 300 秒内直接回复下面算式的结果，超时将被自动移出群聊。\n"
+                            + "若你同时在多个群等待审核，请按“群号 答案”的格式回复。\n"
+                            + question.expression() + " = ?");
+            return;
+        }
 
         GroupOperation.SendGroupMessage(
                 groupId,
                 new MentionSegment(userId),
-                new TextSegment("\n" + message)
-        );
+                new TextSegment("\n入群后置审核：请在 300 秒内直接发送下面算式的结果，超时将被自动移出群聊。\n" + question.expression() + " = ?"));
+    }
+
+    private List<ReviewKey> findPendingReviewsByUserId(long userId) {
+        List<ReviewKey> userReviews = new ArrayList<>();
+        for (ReviewKey key : pendingReviews.keySet()) {
+            if (key.userId() == userId) {
+                userReviews.add(key);
+            }
+        }
+        return userReviews;
+    }
+
+    private ReviewKey resolvePrivateReviewKey(long userId, PrivateReviewAttempt attempt, List<ReviewKey> userReviews) {
+        if (attempt.groupId() != null) {
+            for (ReviewKey key : userReviews) {
+                if (key.groupId() == attempt.groupId()) {
+                    return key;
+                }
+            }
+            PrivateOperation.SendPrivateMessage(userId, "未找到对应群的待审核任务，请确认群号后重试。");
+            return null;
+        }
+
+        if (userReviews.size() == 1) {
+            return userReviews.get(0);
+        }
+
+        PrivateOperation.SendPrivateMessage(userId, "检测到你当前在多个群存在待审核任务，请按“群号 答案”的格式回复。");
+        return null;
+    }
+
+    private PrivateReviewAttempt parsePrivateReviewAttempt(String normalizedMessage) {
+        if (normalizedMessage.matches("-?\\d+")) {
+            return new PrivateReviewAttempt(null, normalizedMessage);
+        }
+
+        String[] parts = normalizedMessage.split("\\s+", 2);
+        if (parts.length != 2)
+            return null;
+        if (!parts[0].matches("\\d+"))
+            return null;
+
+        String answerText = parts[1].trim();
+        if (!answerText.matches("-?\\d+"))
+            return null;
+
+        return new PrivateReviewAttempt(Long.parseLong(parts[0]), answerText);
+    }
+
+    private String normalizeReviewMessage(String rawMessage) {
+        if (rawMessage == null)
+            return null;
+
+        String normalizedMessage = rawMessage.trim();
+        if (normalizedMessage.isEmpty())
+            return null;
+
+        return normalizedMessage;
+    }
+
+    private void sendWelcomeMessage(long userId, long groupId) {
+        if (!Configuration.groupWelcomeMessage.enable)
+            return;
+
+        String message = Configuration.groupWelcomeMessage.getMessage(userId, groupId).trim();
+        if (message.isEmpty())
+            return;
+
+        GroupOperation.SendGroupMessage(
+                groupId,
+                new MentionSegment(userId),
+                new TextSegment("\n" + message));
     }
 
     private MathQuestion createMathQuestion() {

@@ -147,6 +147,8 @@ public class Configuration extends ConfigurationFile {
     public static class PostJoinReview extends ConfigurationPart {
         @Comment("是否启用新用户进群后置审核")
         public boolean enable = false;
+            @Comment("是否通过私聊发送后置审核验证消息")
+            public boolean usePrivateMessage = false;
     }
 
     public static class GroupWelcomeMessage extends ConfigurationPart {
