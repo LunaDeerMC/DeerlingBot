@@ -41,6 +41,13 @@ public class Configuration extends ConfigurationFile {
     public static String commandPrefix = "/";
 
     @Comments({
+        "服务端指令执行前缀",
+        "仅 admin-account-list 中的 QQ 账户可通过私聊使用",
+        "群聊中的此前缀消息会被完全静默忽略"
+    })
+    public static String commandExecutePrefix = "!";
+
+    @Comments({
             "是否使用支持图片返回结果的指令",
             "启用后部分指令（如info）会返回美观的图片结果",
             "此特性需要手动下载额外的包并正确配置环境",

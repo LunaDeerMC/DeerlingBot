@@ -49,6 +49,19 @@ public class BindManager implements Listener {
         }
     }
 
+    public boolean unbind(long userId) {
+        try {
+            if (!WhitelistTable.getInstance().isBind(userId)) {
+                return false;
+            }
+            WhitelistTable.getInstance().setUnbind(userId);
+            return true;
+        } catch (Exception e) {
+            XLogger.error(e);
+            return false;
+        }
+    }
+
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         OfflinePlayer player = event.getPlayer();

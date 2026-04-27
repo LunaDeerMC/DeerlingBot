@@ -21,7 +21,7 @@ libraries += "org.seleniumhq.selenium:selenium-java:4.9.0"
 var suffixes = getAndIncrementVersion()
 
 group = "cn.lunadeer.mc"
-version = "1.0-$suffixes"
+version = "2.2-$suffixes"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))

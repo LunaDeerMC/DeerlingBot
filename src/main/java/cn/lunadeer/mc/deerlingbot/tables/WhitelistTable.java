@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static cn.lunadeer.mc.deerlingbot.utils.Misc.generateCode;
+
 public class WhitelistTable {
 
     private static WhitelistTable instance;
@@ -127,6 +129,17 @@ public class WhitelistTable {
                 .where("code = ?", code.toUpperCase())
                 .execute();
     }
+
+        public void setUnbind(long userId) throws Exception {
+        Update.update("user_record")
+            .set(
+                new FieldBoolean("bind", false),
+                new FieldLong("user_id", 0L),
+                new FieldString("code", generateCode())
+            )
+            .where("user_id = ?", userId)
+            .execute();
+        }
 
     public void setName(UUID uuid, String name) throws Exception {
         Update.update("user_record")
