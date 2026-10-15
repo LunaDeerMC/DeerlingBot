@@ -148,7 +148,9 @@ public class Configuration extends ConfigurationFile {
     @Comments({
             "群聊后置审核设置",
             "启用后会自动通过加群申请，通过申请或邀请入群的新用户均需完成一道简单算术题",
-            "若 300 秒内未完成验证，将自动移出群聊"
+            "若 300 秒内未完成验证，将请求移出群聊",
+            "重载切换群聊/私聊只影响新审核；关闭审核或移除群会取消对应审核",
+            "待审核状态异步保存。重启恢复剩余时间；停机期间已过期则重新给予 300 秒"
     })
     public static PostJoinReview postJoinReview = new PostJoinReview();
 

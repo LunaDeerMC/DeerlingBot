@@ -58,6 +58,8 @@ public class CoreConnector {
         public void onOpen(WebSocket webSocket) {
             messageBuffer.setLength(0); // 新连接不能继承旧连接未收完的分片。
             webSocket.request(1); // Request one message
+            cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler.runTask(
+                    cn.lunadeer.mc.deerlingbot.DeerlingBot::notifyBotConnected);
         }
 
         @Override

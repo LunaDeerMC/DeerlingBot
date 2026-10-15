@@ -19,6 +19,13 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
+import java.nio.file.Path;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,26 +34,157 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class JoinLeaveEvents implements Listener {
 
-    private static final long REVIEW_TIMEOUT_TICKS = 300L * 20L;
+    private static final long REVIEW_TIMEOUT_MILLIS = 300_000L;
     private final Map<ReviewKey, PendingReview> pendingReviews = new ConcurrentHashMap<>();
+    private final LongSupplier clock;
+    private final Function<List<ReviewStore.Entry>, CompletableFuture<Void>> save;
+    private final Consumer<Runnable> dispatch;
+    private ReviewStore store;
+    private volatile boolean closed;
+    private boolean connected;
+    private boolean loaded = true;
+    private long revision;
 
-    private record ReviewKey(long groupId, long userId) {
+    public JoinLeaveEvents() {
+        this(System::currentTimeMillis, ignored -> CompletableFuture.completedFuture(null), Runnable::run);
     }
 
-    private record MathQuestion(String expression, int answer) {
+    JoinLeaveEvents(LongSupplier clock,
+                    Function<List<ReviewStore.Entry>, CompletableFuture<Void>> save,
+                    Consumer<Runnable> dispatch) {
+        this.clock = clock;
+        this.save = save;
+        this.dispatch = dispatch;
     }
 
-    private record PrivateReviewAttempt(Long groupId, String answerText) {
+    public JoinLeaveEvents(Path stateFile) {
+        this(new ReviewStore(stateFile));
     }
 
-    private static final class PendingReview {
-        private final MathQuestion question;
-        private final CancellableTask timeoutTask;
+    private JoinLeaveEvents(ReviewStore store) {
+        this(store, System::currentTimeMillis, task -> Scheduler.runTask(task));
+    }
 
-        private PendingReview(MathQuestion question, CancellableTask timeoutTask) {
-            this.question = question;
-            this.timeoutTask = timeoutTask;
+    JoinLeaveEvents(ReviewStore store, LongSupplier clock, Consumer<Runnable> dispatch) {
+        this(clock, store::save, dispatch);
+        this.store = store;
+        loaded = false;
+    }
+
+    /** 加载完成前不打开连接，从而不会与新入群/退群事件互相覆盖。 */
+    public void start(Runnable ready, Consumer<Throwable> failure) {
+        store.load().whenComplete((entries, error) -> dispatchIfOpen(() -> {
+            if (closed) return;
+            if (error != null) { failure.accept(error); return; }
+            restore(entries);
+            ready.run();
+        }));
+    }
+
+    void restore(List<ReviewStore.Entry> entries) {
+        if (closed) return;
+        for (ReviewStore.Entry entry : entries) {
+            ReviewKey key = new ReviewKey(entry.groupId(), entry.userId());
+            if (enabled(key)) pendingReviews.putIfAbsent(key, new PendingReview(entry, Phase.RECOVERED));
         }
+        loaded = true;
+        persist(); // 清除关闭审核或已移除群的磁盘记录。
+        if (connected) activateRecovered();
+    }
+
+    public boolean isLoaded() { return loaded; }
+
+    public void onBotConnected() {
+        if (closed) return;
+        connected = true;
+        if (loaded) activateRecovered();
+    }
+
+    private void activateRecovered() {
+        for (var entry : pendingReviews.entrySet()) {
+            PendingReview pending = entry.getValue();
+            if (pending.phase != Phase.RECOVERED) continue;
+            ReviewStore.Entry old = pending.data;
+            // 停机期间已过期：重新给完整答题时间，不能在恢复时立即踢人。
+            pending.freshWindow = old.deadline() <= clock.getAsLong();
+            long deadline = pending.freshWindow ? clock.getAsLong() + REVIEW_TIMEOUT_MILLIS : old.deadline();
+            pending.data = new ReviewStore.Entry(old.groupId(), old.userId(), UUID.randomUUID().toString(),
+                    old.expression(), old.answer(), old.privateMessage(), deadline);
+            pending.phase = Phase.STARTING;
+            commitStart(entry.getKey(), pending);
+        }
+    }
+
+    public void reloadConfiguration() {
+        boolean changed = false;
+        for (var entry : pendingReviews.entrySet()) {
+            if (!enabled(entry.getKey()) && pendingReviews.remove(entry.getKey(), entry.getValue())) {
+                cancel(entry.getValue());
+                changed = true;
+            }
+        }
+        if (changed) persist();
+    }
+
+    public void close() {
+        if (closed) return;
+        closed = true;
+        pendingReviews.values().forEach(this::cancel);
+        // 最终快照也覆盖队列满时尚未成功提交的取消/退群状态。
+        // 只等待文件线程，不等待回到游戏线程的完成回调。
+        if (store != null) {
+            if (loaded) store.flushAndClose(snapshot());
+            else store.close(); // 恢复尚未应用时，不能用空内存覆盖已有审核文件。
+        }
+    }
+
+    private record ReviewKey(long groupId, long userId) { }
+    private record MathQuestion(String expression, int answer) { }
+    private record PrivateReviewAttempt(Long groupId, String answerText) { }
+    private enum Phase { RECOVERED, STARTING, ACTIVE, PASSED, EXPIRED }
+    private static final class PendingReview {
+        private ReviewStore.Entry data;
+        private Phase phase;
+        private boolean freshWindow;
+        private CancellableTask timeoutTask;
+        private PendingReview(ReviewStore.Entry data, Phase phase) { this.data = data; this.phase = phase; }
+    }
+
+    private void dispatchIfOpen(Runnable task) {
+        if (!closed) dispatch.accept(() -> { if (!closed) task.run(); });
+    }
+
+    private boolean enabled(ReviewKey key) {
+        return Configuration.postJoinReview.enable && Configuration.groupList.contains(String.valueOf(key.groupId()));
+    }
+
+    private boolean current(ReviewKey key, PendingReview pending) {
+        return !closed && pendingReviews.get(key) == pending && enabled(key);
+    }
+
+    private void cancel(PendingReview pending) {
+        if (pending.timeoutTask != null) pending.timeoutTask.cancel();
+        pending.timeoutTask = null;
+    }
+
+    private CompletableFuture<Void> persist() {
+        long submitted = ++revision;
+        CompletableFuture<Void> result = save.apply(snapshot());
+        result.whenComplete((ignored, error) -> {
+            if (error != null && !(closed && error instanceof CancellationException)) {
+                XLogger.error("审核状态持久化失败，暂停相关处罚并重试: " + error.getMessage());
+                if (!closed) dispatchIfOpen(() -> {
+                    if (!closed && revision == submitted)
+                        Scheduler.runTaskLater(() -> { if (!closed && revision == submitted) persist(); }, 20L);
+                });
+            }
+        });
+        return result;
+    }
+
+    private List<ReviewStore.Entry> snapshot() {
+        return pendingReviews.values().stream().filter(pending -> pending.phase != Phase.PASSED)
+                .map(pending -> pending.data).toList();
     }
 
     @EventHandler
@@ -93,7 +231,13 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onGroupDecrease(GroupDecrease event) {
-        clearPendingReview(event.getGroupId(), event.getUserId());
+        if (event.getUserId() == event.getSelfId()) {
+            for (ReviewKey key : List.copyOf(pendingReviews.keySet())) {
+                if (key.groupId() == event.getGroupId()) clearPendingReview(key.groupId(), key.userId());
+            }
+        } else {
+            clearPendingReview(event.getGroupId(), event.getUserId());
+        }
     }
 
     @EventHandler
@@ -111,10 +255,9 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onGroupMessage(GroupMessage event) {
-        if (Configuration.postJoinReview.usePrivateMessage)
-            return;
-
         ReviewKey key = new ReviewKey(event.getGroupID(), event.getUserId());
+        PendingReview pending = pendingReviews.get(key);
+        if (pending == null || pending.data.privateMessage()) return;
         String normalizedMessage = normalizeReviewMessage(event.getRawMessage());
         if (normalizedMessage == null)
             return;
@@ -130,9 +273,6 @@ public class JoinLeaveEvents implements Listener {
 
     @EventHandler
     public void onPrivateMessage(PrivateMessage event) {
-        if (!Configuration.postJoinReview.usePrivateMessage)
-            return;
-
         String normalizedMessage = normalizeReviewMessage(event.getRawMessage());
         if (normalizedMessage == null)
             return;
@@ -156,96 +296,125 @@ public class JoinLeaveEvents implements Listener {
     }
 
     private void startPostJoinReview(long groupId, long userId) {
-        clearPendingReview(groupId, userId);
-
-        MathQuestion question = createMathQuestion();
+        if (closed) return;
         ReviewKey key = new ReviewKey(groupId, userId);
-        CancellableTask timeoutTask = Scheduler.runTaskLater(() -> timeoutPostJoinReview(key), REVIEW_TIMEOUT_TICKS);
-        pendingReviews.put(key, new PendingReview(question, timeoutTask));
-
-        sendReviewQuestion(groupId, userId, question);
-        XLogger.info(
-                "已向群 {0} 的新成员 {1} 发起后置审核，发送方式：{2}",
-                groupId,
-                userId,
-                Configuration.postJoinReview.usePrivateMessage ? "私聊" : "群聊");
+        MathQuestion question = createMathQuestion();
+        PendingReview pending = new PendingReview(new ReviewStore.Entry(groupId, userId, UUID.randomUUID().toString(),
+                question.expression(), question.answer(), Configuration.postJoinReview.usePrivateMessage,
+                clock.getAsLong() + REVIEW_TIMEOUT_MILLIS), Phase.STARTING);
+        pending.freshWindow = true;
+        PendingReview previous = pendingReviews.put(key, pending);
+        if (previous != null) cancel(previous);
+        commitStart(key, pending);
     }
 
-    private void completePostJoinReview(ReviewKey key) {
-        PendingReview pendingReview = pendingReviews.remove(key);
-        if (pendingReview == null)
-            return;
-        if (pendingReview.timeoutTask != null) {
-            pendingReview.timeoutTask.cancel();
-        }
-
-        if (Configuration.groupWelcomeMessage.enable) {
-            sendWelcomeMessage(key.userId(), key.groupId());
-        } else {
-            GroupOperation.SendGroupMessage(
-                    key.groupId(),
-                    new MentionSegment(key.userId()),
-                    new TextSegment("\n审核通过，欢迎加入本群。"));
-        }
-        XLogger.info("群 {0} 的新成员 {1} 已通过后置审核", key.groupId(), key.userId());
+    private void commitStart(ReviewKey key, PendingReview pending) {
+        persist().whenComplete((ignored, error) -> dispatchIfOpen(() -> {
+            if (!current(key, pending) || pending.phase != Phase.STARTING) return;
+            if (error != null) {
+                pending.timeoutTask = Scheduler.runTaskLater(() -> {
+                    if (current(key, pending)) commitStart(key, pending);
+                }, 20L);
+                return;
+            }
+            long remaining = pending.data.deadline() - clock.getAsLong();
+            if (remaining <= 0 || (pending.freshWindow && remaining < REVIEW_TIMEOUT_MILLIS - 10_000L)) {
+                ReviewStore.Entry data = pending.data;
+                pending.data = new ReviewStore.Entry(data.groupId(), data.userId(), data.session(), data.expression(),
+                        data.answer(), data.privateMessage(), clock.getAsLong() + REVIEW_TIMEOUT_MILLIS);
+                pending.freshWindow = true;
+                commitStart(key, pending); // 磁盘延迟不能吃掉新题目的作答窗口。
+                return;
+            }
+            pending.phase = Phase.ACTIVE;
+            scheduleTimeout(key, pending);
+            sendReviewQuestion(pending.data);
+        }));
     }
 
-    private void timeoutPostJoinReview(ReviewKey key) {
-        PendingReview pendingReview = pendingReviews.remove(key);
-        if (pendingReview == null)
-            return;
+    private void scheduleTimeout(ReviewKey key, PendingReview pending) {
+        long remaining = Math.max(1L, pending.data.deadline() - clock.getAsLong());
+        pending.timeoutTask = Scheduler.runTaskLater(() -> timeoutPostJoinReview(key, pending),
+                Math.max(1L, (remaining + 49L) / 50L));
+    }
 
-        GroupOperation.SetGroupKick(key.groupId(), key.userId(), false);
-        GroupOperation.SendGroupMessage(
-                key.groupId(),
-                new TextSegment("用户 " + key.userId() + " 未在 300 秒内通过后置审核，已自动移出群聊。"));
-        XLogger.warn("群 {0} 的新成员 {1} 未通过后置审核，已自动移出群聊", key.groupId(), key.userId());
+    private void finish(ReviewKey key, PendingReview pending, Phase outcome) {
+        if (!current(key, pending)) return;
+        pending.phase = outcome;
+        cancel(pending);
+        persist().whenComplete((ignored, error) -> dispatchIfOpen(() -> {
+            if (!current(key, pending) || pending.phase != outcome) return;
+            if (error != null) {
+                pending.timeoutTask = Scheduler.runTaskLater(() -> {
+                    if (current(key, pending) && pending.phase == outcome) finish(key, pending, outcome);
+                }, 20L);
+                return;
+            }
+            pendingReviews.remove(key, pending);
+            if (outcome == Phase.EXPIRED) {
+                GroupOperation.SetGroupKick(key.groupId(), key.userId(), false);
+                GroupOperation.SendGroupMessage(key.groupId(), new TextSegment("用户 " + key.userId()
+                        + " 未在规定时间内通过后置审核，已请求移出群聊。"));
+                XLogger.warn("群 {0} 的成员 {1} 审核超时，已请求移出群聊", key.groupId(), key.userId());
+                persist(); // 请求发出前保留过期记录；关服回调未执行时可重新恢复审核。
+            } else if (Configuration.groupWelcomeMessage.enable) {
+                sendWelcomeMessage(key.userId(), key.groupId());
+            } else {
+                GroupOperation.SendGroupMessage(key.groupId(), new MentionSegment(key.userId()),
+                        new TextSegment("\n审核通过，欢迎加入本群。"));
+            }
+        }));
+    }
+
+    private void timeoutPostJoinReview(ReviewKey key, PendingReview pending) {
+        if (!current(key, pending) || pending.phase != Phase.ACTIVE) return;
+        if (clock.getAsLong() < pending.data.deadline()) {
+            scheduleTimeout(key, pending); // tick 时间不能替代持久化的绝对截止时间。
+            return;
+        }
+        finish(key, pending, Phase.EXPIRED);
     }
 
     private void clearPendingReview(long groupId, long userId) {
-        PendingReview pendingReview = pendingReviews.remove(new ReviewKey(groupId, userId));
-        if (pendingReview == null || pendingReview.timeoutTask == null)
-            return;
-        pendingReview.timeoutTask.cancel();
+        PendingReview pending = pendingReviews.remove(new ReviewKey(groupId, userId));
+        if (pending == null) return;
+        cancel(pending);
+        persist();
     }
 
     private void handleReviewAnswer(ReviewKey key, String normalizedMessage, Runnable wrongAnswerAction) {
-        PendingReview pendingReview = pendingReviews.get(key);
-        if (pendingReview == null)
-            return;
-
-        if (normalizedMessage.equals(String.valueOf(pendingReview.question.answer()))) {
-            completePostJoinReview(key);
+        PendingReview pending = pendingReviews.get(key);
+        if (pending == null || !current(key, pending) || pending.phase != Phase.ACTIVE) return;
+        if (clock.getAsLong() >= pending.data.deadline()) {
+            timeoutPostJoinReview(key, pending);
             return;
         }
-
-        if (!normalizedMessage.matches("-?\\d+"))
+        if (normalizedMessage.equals(String.valueOf(pending.data.answer()))) {
+            finish(key, pending, Phase.PASSED);
             return;
-
-        wrongAnswerAction.run();
+        }
+        if (normalizedMessage.matches("-?\\d+")) wrongAnswerAction.run();
     }
 
-    private void sendReviewQuestion(long groupId, long userId, MathQuestion question) {
-        if (Configuration.postJoinReview.usePrivateMessage) {
-            PrivateOperation.SendPrivateMessage(
-                    userId,
-                    "入群后置审核：你正在为群 " + groupId + " 完成验证。\n"
-                            + "请在 300 秒内直接回复下面算式的结果，超时将被自动移出群聊。\n"
-                            + "若你同时在多个群等待审核，请按“群号 答案”的格式回复。\n"
-                            + question.expression() + " = ?");
-            return;
+    private void sendReviewQuestion(ReviewStore.Entry review) {
+        long seconds = Math.max(1L, (review.deadline() - clock.getAsLong() + 999L) / 1000L);
+        String question = "入群后置审核：请在 " + seconds + " 秒内回复算式结果，超时将被移出群聊。\n"
+                + review.expression() + " = ?";
+        if (review.privateMessage()) {
+            PrivateOperation.SendPrivateMessage(review.userId(), "你正在为群 " + review.groupId() + " 完成验证。\n"
+                    + question + "\n若同时在多个群等待审核，请按“群号 答案”的格式回复。");
+        } else {
+            GroupOperation.SendGroupMessage(review.groupId(), new MentionSegment(review.userId()),
+                    new TextSegment("\n" + question));
         }
-
-        GroupOperation.SendGroupMessage(
-                groupId,
-                new MentionSegment(userId),
-                new TextSegment("\n入群后置审核：请在 300 秒内直接发送下面算式的结果，超时将被自动移出群聊。\n" + question.expression() + " = ?"));
     }
 
     private List<ReviewKey> findPendingReviewsByUserId(long userId) {
         List<ReviewKey> userReviews = new ArrayList<>();
         for (ReviewKey key : pendingReviews.keySet()) {
-            if (key.userId() == userId) {
+            PendingReview pending = pendingReviews.get(key);
+            if (key.userId() == userId && pending != null && pending.data.privateMessage()
+                    && pending.phase == Phase.ACTIVE && current(key, pending)) {
                 userReviews.add(key);
             }
         }
@@ -286,7 +455,11 @@ public class JoinLeaveEvents implements Listener {
         if (!answerText.matches("-?\\d+"))
             return null;
 
-        return new PrivateReviewAttempt(Long.parseLong(parts[0]), answerText);
+        try {
+            return new PrivateReviewAttempt(Long.parseLong(parts[0]), answerText);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private String normalizeReviewMessage(String rawMessage) {

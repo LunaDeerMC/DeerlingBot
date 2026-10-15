@@ -32,6 +32,7 @@ class ReloadLifecycleTest {
         Server server = mock(Server.class);
         PluginManager plugins = mock(PluginManager.class);
         doReturn(server).when(plugin).getServer();
+        doReturn(true).when(plugin).isEnabled();
         doReturn(directory.toFile()).when(plugin).getDataFolder();
         doReturn(new PluginDescriptionFile("DeerlingBot", "test", DeerlingBot.class.getName())).when(plugin).getDescription();
         doReturn(Logger.getAnonymousLogger()).when(plugin).getLogger();
@@ -49,7 +50,14 @@ class ReloadLifecycleTest {
              var tables = mockConstruction(WhitelistTable.class);
              var commands = mockConstruction(CommandManager.class);
              var drivers = mockConstruction(WebDriverManager.class);
-             var connectors = mockConstruction(CoreConnector.class)) {
+             var connectors = mockConstruction(CoreConnector.class);
+             var reviews = mockConstruction(JoinLeaveEvents.class, (review, context) -> {
+                 when(review.isLoaded()).thenReturn(true);
+                 doAnswer(invocation -> {
+                     ((Runnable) invocation.getArgument(0)).run();
+                     return null;
+                 }).when(review).start(any(), any());
+             })) {
             bukkit.when(Bukkit::getPluginManager).thenReturn(plugins);
             bukkit.when(() -> Bukkit.getPluginCommand("deerling")).thenReturn(mock(PluginCommand.class));
 
@@ -62,6 +70,8 @@ class ReloadLifecycleTest {
             assertEquals(1, commands.constructed().size());
             verify(commands.constructed().get(0), times(2)).reloadCommands();
             verify(plugins, times(1)).registerEvents(any(JoinLeaveEvents.class), eq(plugin));
+            assertEquals(1, reviews.constructed().size());
+            verify(reviews.constructed().get(0), times(2)).reloadConfiguration();
             verify(plugins, times(1)).registerEvents(any(BindManager.class), eq(plugin));
             verify(connectors.constructed().get(0), times(3)).open();
             scheduler.verifyNoInteractions(); // 重载保留审核定时任务。
@@ -71,6 +81,7 @@ class ReloadLifecycleTest {
             doThrow(new IllegalStateException("test close failure")).when(drivers.constructed().get(2)).close();
             plugin.onDisable();
             verify(databases.constructed().get(0)).close();
+            verify(reviews.constructed().get(0)).close();
             scheduler.verify(Scheduler::cancelAll);
             notifications.verify(Notification::close);
             assertThrows(IllegalStateException.class,

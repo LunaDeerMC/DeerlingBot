@@ -25,6 +25,7 @@ public final class DeerlingBot extends JavaPlugin {
     private CommandManager botCommands;
     private WebDriverManager webDriver;
     private PlaceHolderApiManager placeholders;
+    private JoinLeaveEvents joinLeaveEvents;
 
     private record DatabaseSettings(String type, String host, String port, String name, String user, String password) {
         static DatabaseSettings current() {
@@ -78,10 +79,16 @@ public final class DeerlingBot extends JavaPlugin {
             if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                 placeholders = new PlaceHolderApiManager(this);
             }
-            getServer().getPluginManager().registerEvents(new JoinLeaveEvents(), this);
-            // 数据表与监听器准备完成后才接收 OneBot 事件。
+            joinLeaveEvents = new JoinLeaveEvents(getDataFolder().toPath().resolve("pending-reviews.json"));
+            getServer().getPluginManager().registerEvents(joinLeaveEvents, this);
             connector = new CoreConnector();
-            connector.open();
+            // 文件读取在线程池执行；恢复完成后才接收新入群/退群事件。
+            joinLeaveEvents.start(() -> {
+                if (isEnabled() && connector != null) connector.open();
+            }, error -> {
+                getLogger().log(java.util.logging.Level.SEVERE, "无法恢复入群审核，插件已停用", error);
+                getServer().getPluginManager().disablePlugin(this);
+            });
         } catch (Exception e) {
             getServer().getPluginManager().disablePlugin(this);
             throw new RuntimeException(e);
@@ -118,11 +125,12 @@ public final class DeerlingBot extends JavaPlugin {
             // 在途异步指令仍使用当前库，连接参数变更留待重启，避免跨库执行同一操作。
             boolean databaseRestartRequired = !DatabaseSettings.current().equals(databaseSettings);
             if (databaseRestartRequired) databaseSettings.restoreRuntime();
+            if (joinLeaveEvents != null) joinLeaveEvents.reloadConfiguration();
             botCommands.reloadCommands();
             webDriver.close();
             webDriver = new WebDriverManager(this);
             connector.close();
-            connector.open();
+            if (joinLeaveEvents == null || joinLeaveEvents.isLoaded()) connector.open();
             // 保留监听器及正在进行的入群审核，避免重复注册或丢失审核超时任务。
             return databaseRestartRequired;
         } catch (Exception e) {
@@ -136,6 +144,7 @@ public final class DeerlingBot extends JavaPlugin {
     public void onDisable() {
         // 每项清理独立执行，部分初始化失败也能安全关闭其余资源。
         if (connector != null) closeResource(connector::close);
+        if (joinLeaveEvents != null) closeResource(joinLeaveEvents::close);
         closeResource(() -> HandlerList.unregisterAll(this));
         closeResource(Scheduler::cancelAll);
         if (webDriver != null) closeResource(webDriver::close);
@@ -149,6 +158,7 @@ public final class DeerlingBot extends JavaPlugin {
         if (database != null) closeResource(database::close);
         closeResource(cn.lunadeer.mc.deerlingbot.utils.command.CommandManager::close);
         closeResource(Notification::close);
+        joinLeaveEvents = null;
         connector = null;
         webDriver = null;
         placeholders = null;
@@ -164,6 +174,12 @@ public final class DeerlingBot extends JavaPlugin {
         } catch (Exception e) {
             getLogger().log(java.util.logging.Level.SEVERE, "关闭插件资源失败", e);
         }
+    }
+
+    public static void notifyBotConnected() {
+        DeerlingBot plugin = instance;
+        if (plugin != null && plugin.isEnabled() && plugin.joinLeaveEvents != null)
+            plugin.joinLeaveEvents.onBotConnected();
     }
 
     public static DeerlingBot getInstance() {

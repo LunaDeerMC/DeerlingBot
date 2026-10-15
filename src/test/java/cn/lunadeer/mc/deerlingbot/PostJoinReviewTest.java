@@ -20,7 +20,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.ArrayList;
+import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -32,7 +35,9 @@ class PostJoinReviewTest {
     private final List<JSONObject> sent = new ArrayList<>();
     private final List<Runnable> timeouts = new ArrayList<>();
     private final CancellableTask timeoutTask = mock(CancellableTask.class);
-    private final JoinLeaveEvents listener = new JoinLeaveEvents();
+    private final AtomicLong now = new AtomicLong(1_000_000L);
+    private final JoinLeaveEvents listener = new JoinLeaveEvents(now::get,
+            ignored -> CompletableFuture.completedFuture(null), Runnable::run);
     private MockedStatic<CoreConnector> connectors;
     private MockedStatic<Scheduler> scheduler;
     private MockedStatic<XLogger> logger;
@@ -59,7 +64,7 @@ class PostJoinReviewTest {
         connectors = mockStatic(CoreConnector.class);
         connectors.when(CoreConnector::getInstance).thenReturn(connector);
         scheduler = mockStatic(Scheduler.class);
-        scheduler.when(() -> Scheduler.runTaskLater(any(Runnable.class), eq(6000L)))
+        scheduler.when(() -> Scheduler.runTaskLater(any(Runnable.class), anyLong()))
                 .thenAnswer(invocation -> {
                     timeouts.add(invocation.getArgument(0));
                     return timeoutTask;
@@ -115,6 +120,7 @@ class PostJoinReviewTest {
         listener.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
         assertEquals(1, timeouts.size());
 
+        now.addAndGet(300_000L);
         timeouts.get(0).run();
 
         List<JSONObject> kicks = sent.stream().filter(action -> "set_group_kick".equals(action.getString("action"))).toList();
@@ -150,6 +156,207 @@ class PostJoinReviewTest {
 
         scheduler.verifyNoInteractions();
         assertTrue(sent.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void reloadKeepsOriginalAnswerChannel(boolean privateReview) {
+        Configuration.postJoinReview.usePrivateMessage = privateReview;
+        listener.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        String answer = answerTo(messageText(sent.get(0)));
+        Configuration.postJoinReview.usePrivateMessage = !privateReview;
+        listener.reloadConfiguration();
+        reply(listener, privateReview, 100, 42, answer);
+        assertTrue(messageText(sent.get(1)).contains("欢迎新成员"));
+        now.addAndGet(300_000L);
+        timeouts.get(0).run();
+        assertEquals(0, kicks());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void disablingReviewOrRemovingGroupCancelsAndPersists(boolean disable) {
+        List<List<ReviewStore.Entry>> snapshots = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            snapshots.add(entries); return CompletableFuture.completedFuture(null);
+        }, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        if (disable) Configuration.postJoinReview.enable = false;
+        else Configuration.groupList = List.of();
+        instance.reloadConfiguration();
+        now.addAndGet(300_000L);
+        timeouts.get(0).run();
+        assertTrue(snapshots.get(snapshots.size() - 1).isEmpty());
+        assertEquals(0, kicks());
+    }
+
+    @Test
+    void oldTimeoutCannotKickMemberAfterLeavingAndRejoining() {
+        listener.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        Runnable old = timeouts.get(0);
+        listener.onGroupDecrease(new GroupDecrease(0, 1, 100, 42, GroupDecrease.SubType.leave, 42));
+        now.addAndGet(100_000L);
+        listener.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        now.addAndGet(200_000L);
+        old.run();
+        assertEquals(0, kicks());
+        reply(listener, false, 100, 42, answerTo(messageText(sent.get(1))));
+        assertTrue(messageText(sent.get(2)).contains("欢迎新成员"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void restoredReviewWaitsForConnectionAndUsesDeadline(boolean expired, boolean connectionFirst) {
+        List<List<ReviewStore.Entry>> snapshots = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            snapshots.add(entries); return CompletableFuture.completedFuture(null);
+        }, Runnable::run);
+        if (connectionFirst) instance.onBotConnected();
+        instance.restore(List.of(new ReviewStore.Entry(100, 42, "old-session", "20 + 3", 23,
+                true, now.get() + (expired ? -1000L : 100_000L))));
+        if (!connectionFirst) {
+            assertTrue(sent.isEmpty());
+            assertTrue(timeouts.isEmpty());
+            instance.onBotConnected();
+        }
+        assertEquals(1, sent.size());
+        assertTrue(messageText(sent.get(0)).contains(expired ? "300 秒" : "100 秒"));
+        ReviewStore.Entry restored = snapshots.get(snapshots.size() - 1).get(0);
+        assertEquals(now.get() + (expired ? 300_000L : 100_000L), restored.deadline());
+        assertTrue(restored.privateMessage());
+        instance.onBotConnected();
+        assertEquals(1, sent.size()); // 普通重连不能延长或重发已激活审核。
+        now.set(restored.deadline());
+        timeouts.get(0).run();
+        timeouts.get(0).run();
+        assertEquals(1, kicks());
+    }
+
+    @Test
+    void failedTimeoutPersistenceDoesNotKickAndLateSuccessCannotKickNewSession() {
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            CompletableFuture<Void> write = new CompletableFuture<>(); writes.add(write); return write;
+        }, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        assertTrue(sent.isEmpty());
+        writes.get(0).complete(null);
+        now.addAndGet(300_000L);
+        timeouts.get(0).run();
+        assertEquals(0, kicks());
+        writes.get(1).completeExceptionally(new IllegalStateException("disk full"));
+        assertEquals(0, kicks());
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        writes.get(2).complete(null);
+        assertEquals(0, kicks());
+        // 所有旧重试和旧超时均不能干扰新会话。
+        List.copyOf(timeouts).subList(0, timeouts.size() - 1).forEach(Runnable::run);
+        assertEquals(0, kicks());
+    }
+
+    @Test
+    void leaveDuringTimeoutWritePreventsKickAfterCommit() {
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            CompletableFuture<Void> write = new CompletableFuture<>(); writes.add(write); return write;
+        }, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        writes.get(0).complete(null);
+        now.addAndGet(300_000L);
+        timeouts.get(0).run();
+        instance.onGroupDecrease(new GroupDecrease(0, 1, 100, 42, GroupDecrease.SubType.leave, 42));
+        writes.get(1).complete(null);
+        assertEquals(0, kicks());
+    }
+
+    @Test
+    void shutdownIgnoresLateWriteAndTimeoutCallbacks() {
+        CompletableFuture<Void> write = new CompletableFuture<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, ignored -> write, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        instance.close();
+        write.complete(null);
+        instance.onBotConnected();
+        assertTrue(sent.isEmpty());
+        assertTrue(timeouts.isEmpty());
+    }
+
+    @Test
+    void slowInitialPersistenceRestartsAnswerWindowBeforeSending() {
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        List<List<ReviewStore.Entry>> snapshots = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            snapshots.add(entries);
+            CompletableFuture<Void> write = new CompletableFuture<>(); writes.add(write); return write;
+        }, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        now.addAndGet(300_001L);
+        writes.get(0).complete(null);
+        assertTrue(sent.isEmpty());
+        assertEquals(now.get() + 300_000L, snapshots.get(1).get(0).deadline());
+        writes.get(1).complete(null);
+        assertTrue(messageText(sent.get(0)).contains("300 秒"));
+        assertEquals(0, kicks());
+    }
+
+    @Test
+    void shutdownBeforeTimeoutActionKeepsRecordForRecovery() {
+        List<List<ReviewStore.Entry>> snapshots = new ArrayList<>();
+        List<Runnable> callbacks = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            snapshots.add(entries); return CompletableFuture.completedFuture(null);
+        }, callbacks::add);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        callbacks.remove(0).run();
+        now.addAndGet(300_000L);
+        timeouts.get(0).run();
+        assertEquals(1, snapshots.get(snapshots.size() - 1).size());
+        instance.close();
+        callbacks.remove(0).run();
+        assertEquals(0, kicks());
+        JoinLeaveEvents restored = new JoinLeaveEvents(now::get,
+                ignored -> CompletableFuture.completedFuture(null), Runnable::run);
+        restored.restore(snapshots.get(snapshots.size() - 1));
+        restored.onBotConnected();
+        assertTrue(messageText(sent.get(1)).contains("300 秒"));
+    }
+
+    @Test
+    void restoreDropsDisallowedGroupsAndDoesNotOverwriteNewSession() {
+        List<List<ReviewStore.Entry>> snapshots = new ArrayList<>();
+        JoinLeaveEvents instance = new JoinLeaveEvents(now::get, entries -> {
+            snapshots.add(entries); return CompletableFuture.completedFuture(null);
+        }, Runnable::run);
+        instance.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        String currentAnswer = answerTo(messageText(sent.get(0)));
+        instance.restore(List.of(new ReviewStore.Entry(100, 42, "old", "10 + 1", 11, true, now.get() + 1000L),
+                new ReviewStore.Entry(999, 88, "removed", "10 + 1", 11, true, now.get() + 1000L)));
+        instance.onBotConnected();
+        assertEquals(1, sent.size());
+        assertEquals(1, snapshots.get(snapshots.size() - 1).size());
+        reply(instance, false, 100, 42, currentAnswer);
+        assertTrue(messageText(sent.get(1)).contains("欢迎新成员"));
+    }
+
+    private long kicks() {
+        return sent.stream().filter(action -> "set_group_kick".equals(action.getString("action"))).count();
+    }
+
+    @Test
+    void absoluteDeadlineAppliesEvenBeforeDelayedTimerRuns() {
+        listener.onGroupIncrease(increase(GroupIncrease.SubType.invite, 100, 42));
+        String answer = answerTo(messageText(sent.get(0)));
+        now.addAndGet(300_001L);
+        reply(listener, false, 100, 42, answer);
+        timeouts.get(0).run();
+        assertEquals(1, kicks());
+    }
+
+    private void reply(JoinLeaveEvents instance, boolean privateMessage, long group, long user, String answer) {
+        if (privateMessage) instance.onPrivateMessage(new PrivateMessage(0, 1, PrivateMessage.SubType.group, 7,
+                user, List.of(new TextSegment(answer)), answer, null));
+        else instance.onGroupMessage(new GroupMessage(0, 1, GroupMessage.SubType.normal, 7, group, user,
+                List.of(new TextSegment(answer)), answer, null));
     }
 
     private GroupIncrease increase(GroupIncrease.SubType type, long groupId, long userId) {
