@@ -28,6 +28,7 @@ public final class DeerlingBot extends JavaPlugin {
     private JoinLeaveEvents joinLeaveEvents;
     private EventIoService eventIo;
     private PlayerSnapshotService playerSnapshots;
+    private AvatarManager avatars;
 
     private record DatabaseSettings(String type, String host, String port, String name, String user, String password) {
         static DatabaseSettings current() {
@@ -76,6 +77,7 @@ public final class DeerlingBot extends JavaPlugin {
             configureDatabase();
             eventIo = new EventIoService(this);
             playerSnapshots = new PlayerSnapshotService(this);
+            avatars = new AvatarManager();
             botCommands = new CommandManager(this);
             new BindManager(this);
             new MessageManager(this);
@@ -130,6 +132,8 @@ public final class DeerlingBot extends JavaPlugin {
             boolean databaseRestartRequired = !DatabaseSettings.current().equals(databaseSettings);
             if (databaseRestartRequired) databaseSettings.restoreRuntime();
             if (joinLeaveEvents != null) joinLeaveEvents.reloadConfiguration();
+            avatars.close();
+            avatars = new AvatarManager();
             botCommands.reloadCommands();
             webDriver.close();
             webDriver = new WebDriverManager(this);
@@ -147,6 +151,7 @@ public final class DeerlingBot extends JavaPlugin {
     @Override
     public void onDisable() {
         // 每项清理独立执行，部分初始化失败也能安全关闭其余资源。
+        if (avatars != null) closeResource(avatars::close);
         if (connector != null) closeResource(connector::close);
         // 先停止接收新任务并排空退群写入，再关闭数据库和调度器。
         if (eventIo != null) closeResource(eventIo::close);
@@ -168,6 +173,7 @@ public final class DeerlingBot extends JavaPlugin {
         joinLeaveEvents = null;
         eventIo = null;
         playerSnapshots = null;
+        avatars = null;
         connector = null;
         webDriver = null;
         placeholders = null;

@@ -51,6 +51,7 @@ class ReloadLifecycleTest {
              var eventQueues = mockConstruction(EventIoService.class, (queue, context) ->
                      queueAccess.when(EventIoService::getInstance).thenReturn(queue));
              var snapshots = mockConstruction(PlayerSnapshotService.class);
+             var avatars = mockConstruction(AvatarManager.class);
              var tables = mockConstruction(WhitelistTable.class);
              var commands = mockConstruction(CommandManager.class);
              var drivers = mockConstruction(WebDriverManager.class);
@@ -75,6 +76,10 @@ class ReloadLifecycleTest {
             assertEquals(1, snapshots.constructed().size());
             verify(eventQueues.constructed().get(0), never()).close();
             verify(snapshots.constructed().get(0), never()).close();
+            assertEquals(3, avatars.constructed().size());
+            verify(avatars.constructed().get(0)).close();
+            verify(avatars.constructed().get(1)).close();
+            verify(avatars.constructed().get(2), never()).close();
             assertEquals(1, commands.constructed().size());
             verify(commands.constructed().get(0), times(2)).reloadCommands();
             verify(plugins, times(1)).registerEvents(any(JoinLeaveEvents.class), eq(plugin));
@@ -88,8 +93,10 @@ class ReloadLifecycleTest {
             // 一项关闭失败不能阻止数据库和其他资源清理。
             doThrow(new IllegalStateException("test close failure")).when(drivers.constructed().get(2)).close();
             plugin.onDisable();
-            var shutdownOrder = inOrder(eventQueues.constructed().get(0),
+            var shutdownOrder = inOrder(avatars.constructed().get(2), connectors.constructed().get(0), eventQueues.constructed().get(0),
                     snapshots.constructed().get(0), databases.constructed().get(0));
+            shutdownOrder.verify(avatars.constructed().get(2)).close();
+            shutdownOrder.verify(connectors.constructed().get(0)).close();
             shutdownOrder.verify(eventQueues.constructed().get(0)).close();
             shutdownOrder.verify(snapshots.constructed().get(0)).close();
             shutdownOrder.verify(databases.constructed().get(0)).close();

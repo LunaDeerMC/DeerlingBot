@@ -1,5 +1,6 @@
 package cn.lunadeer.mc.deerlingbot.commands;
 
+import cn.lunadeer.mc.deerlingbot.managers.AvatarManager;
 import cn.lunadeer.mc.deerlingbot.managers.PlayerSnapshotService;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
@@ -12,9 +13,7 @@ import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -27,15 +26,17 @@ public class SimpleInfo extends BotCommand {
 
     @Override
     public void handle(Message messageEvent, String... args) {
+        AvatarManager avatars = AvatarManager.getInstance();
         UUID uuid;
         String lastKnownName;
         String status;
         long userId = messageEvent.getUserId();
         try {
-            uuid = WhitelistTable.getInstance().getUserUUID(userId);
-            lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
+            WhitelistTable whitelist = WhitelistTable.getInstance();
+            uuid = whitelist.getUserUUID(userId);
+            lastKnownName = whitelist.getLastKnownName(uuid);
             if (!PlayerSnapshotService.getInstance().isOnline(uuid)) {
-                status = "【上次在线】 " + WhitelistTable.getInstance().getLastJoinAt(uuid);
+                status = "【上次在线】 " + whitelist.getLastJoinAt(uuid);
             } else {
                 status = "【当前在线】";
             }
@@ -43,14 +44,14 @@ public class SimpleInfo extends BotCommand {
             XLogger.error(e);
             return;
         }
-        // get image from api https://api.mineatar.io/face/<UUID>
-        BufferedImage headImage = null;
-        try {
-            headImage = ImageIO.read(new URL("https://api.mineatar.io/face/" + uuid + "?scale=12"));
-        } catch (Exception e) {
-            XLogger.error("Failed to fetch image for UUID: " + uuid, e);
-        }
+        avatars.fetch(uuid).thenAccept(headImage -> {
+            // 捕获本次请求的下载器，重载或停用取消的旧请求不得再发送回复。
+            if (!avatars.isClosed()) reply(messageEvent, uuid, lastKnownName, status, headImage);
+        });
+    }
 
+    private void reply(Message messageEvent, UUID uuid, String lastKnownName, String status, BufferedImage headImage) {
+        long userId = messageEvent.getUserId();
         long messageID = messageEvent.getMessageId();
         List<MessageSegment> playerInfos = new ArrayList<>();
         playerInfos.add(new ReplySegment(messageID));
