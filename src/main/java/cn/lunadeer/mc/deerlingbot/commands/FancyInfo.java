@@ -9,6 +9,7 @@ import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.ImageSegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageSegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
@@ -20,6 +21,8 @@ import org.bukkit.entity.Player;
 
 import java.awt.image.BufferedImage;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.RejectedExecutionException;
 
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.*;
 
@@ -34,31 +37,33 @@ public class FancyInfo extends BotCommand {
 
     @Override
     public void handle(Message messageEvent, String... args) {
-        UUID uuid;
-        String lastKnownName;
-        String status;
         try {
-            uuid = WhitelistTable.getInstance().getUserUUID(messageEvent.getUserId());
-            lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
-            Player player = DeerlingBot.getInstance().getServer().getOnlinePlayers().stream()
-                    .filter(p -> p.getUniqueId().equals(uuid))
-                    .findFirst()
-                    .orElse(null);
-            if (player == null) {
-                status = "[上次在线] " + WhitelistTable.getInstance().getLastJoinAt(uuid);
-            } else {
-                status = "[当前在线]";
-            }
+            UUID uuid = WhitelistTable.getInstance().getUserUUID(messageEvent.getUserId());
+            WebDriverManager manager = WebDriverManager.getInstance();
+            manager.render(uuid, () -> renderInfo(uuid, manager)).whenComplete((image, error) -> {
+                if (error instanceof CancellationException) return;
+                if (error instanceof RejectedExecutionException) {
+                    reply(messageEvent, new TextSegment("图片生成繁忙，请稍后重试"));
+                } else if (error != null || image == null) {
+                    if (error != null) XLogger.error(error);
+                    reply(messageEvent, new TextSegment("图片生成失败，请联系管理员检查模板和浏览器配置"));
+                } else {
+                    reply(messageEvent, new ImageSegment(image));
+                }
+            });
         } catch (Exception e) {
             XLogger.error(e);
-            return;
+            reply(messageEvent, new TextSegment("图片生成失败，请联系管理员"));
         }
+    }
 
+    private BufferedImage renderInfo(UUID uuid, WebDriverManager manager) {
         OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
-
-        long messageID = messageEvent.getMessageId();
-
         try (TemplateFactory userInfo = new TemplateFactory(template)) {
+            String lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
+            Player player = DeerlingBot.getInstance().getServer().getPlayer(uuid);
+            String status = player == null
+                    ? "[上次在线] " + WhitelistTable.getInstance().getLastJoinAt(uuid) : "[当前在线]";
             // /papi ecloud download Statistic
             userInfo.setPlaceholder("nickname", lastKnownName)
                     .setPlaceholder("status", status)
@@ -70,21 +75,18 @@ public class FancyInfo extends BotCommand {
                     .setPlaceholder("craft", Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI") ?
                             convertDecimal(PlaceHolderApiManager.setPlaceholders(offlinePlayer, "%statistic_craft_item%")) : "nil")
             ;
-            offlinePlayer.getStatistic(Statistic.MOB_KILLS);
-            BufferedImage userInfoImage = WebDriverManager.getInstance().takeScreenshot(userInfo.build(offlinePlayer), template);
-            if (messageEvent instanceof GroupMessage groupMessage) {
-                long groupID = groupMessage.getGroupID();
-                GroupOperation.SendGroupMessage(groupID,
-                        new ReplySegment(messageID), userInfoImage != null ?
-                                new ImageSegment(userInfoImage) : new TextSegment("出错了，请联系管理员"));
-            } else {
-                PrivateOperation.SendPrivateMessage(messageEvent.getUserId(),
-                        new ReplySegment(messageID), userInfoImage != null ?
-                                new ImageSegment(userInfoImage) : new TextSegment("出错了，请联系管理员"));
-            }
+            return manager.takeScreenshot(userInfo.build(offlinePlayer), template);
         } catch (Exception e) {
-            XLogger.error("Failed to generate user info image");
-            XLogger.error(e);
+            throw new IllegalStateException("Failed to generate user info image", e);
+        }
+    }
+
+    private void reply(Message messageEvent, MessageSegment content) {
+        ReplySegment reply = new ReplySegment(messageEvent.getMessageId());
+        if (messageEvent instanceof GroupMessage groupMessage) {
+            GroupOperation.SendGroupMessage(groupMessage.getGroupID(), reply, content);
+        } else {
+            PrivateOperation.SendPrivateMessage(messageEvent.getUserId(), reply, content);
         }
     }
 

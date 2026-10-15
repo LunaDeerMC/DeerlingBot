@@ -214,6 +214,14 @@ public class CommandManager implements Listener {
                         continue;
                     }
                     BotCommand command = (BotCommand) clazz.getDeclaredConstructor().newInstance();
+                    // 启用图片指令时优先采用图片实现，不依赖类路径遍历顺序。
+                    if (clazz.isAnnotationPresent(FancyCommand.class)) {
+                        loaded.removeIf(existing -> existing.getCommand().equalsIgnoreCase(command.getCommand()));
+                    } else if (loaded.stream().anyMatch(existing ->
+                            existing.getCommand().equalsIgnoreCase(command.getCommand())
+                                    && existing.getClass().isAnnotationPresent(FancyCommand.class))) {
+                        continue;
+                    }
                     loaded.add(command);
                     XLogger.debug("Registered command: {0}", command.getCommand());
                 }

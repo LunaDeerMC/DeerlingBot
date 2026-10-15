@@ -1,120 +1,81 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.DeerlingBot;
-import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 
 public class TemplateFactory implements AutoCloseable {
 
-    private final String templateName;
+    private final Path templateDirectory;
     private String indexFileContent;
-    private Map<String, byte[]> resourcesFileContent = new HashMap<>();
-    private final Path outputPath;
+    private Path outputFile;
+    private boolean closed;
 
     public TemplateFactory(String templateName) {
-        this.templateName = templateName;
-        // plugins/DeerlingBot/templates/public
-        File publicFileRoot = new File(DeerlingBot.getInstance().getDataFolder(), "templates/public");
-        if (!publicFileRoot.exists()) {
-            throw new RuntimeException("找不到公共目录: " + publicFileRoot.getAbsolutePath());
-        }
-        // plugins/DeerlingBot/templates/<templateName>
-        File templateFileRoot = new File(DeerlingBot.getInstance().getDataFolder(), "templates/" + templateName);
-        if (!templateFileRoot.exists()) {
-            throw new RuntimeException("找不到模板目录: " + templateFileRoot.getAbsolutePath());
-        }
-        // plugins/DeerlingBot/templates/<templateName>/index.html
-        File indexFile = new File(templateFileRoot, "index.html");
-        if (!indexFile.exists()) {
-            throw new RuntimeException("找不到模板文件: " + indexFile.getAbsolutePath());
-        }
+        this(DeerlingBot.getInstance().getDataFolder().toPath().resolve("templates"), templateName);
+    }
+
+    TemplateFactory(Path templatesDirectory, String templateName) {
+        templateDirectory = templatesDirectory.resolve(templateName);
         try {
-            outputPath = Files.createTempDirectory("screen_shoot_data_");
-            // read: plugins/DeerlingBot/templates/<templateName>/index.html
-            indexFileContent = Files.readString(indexFile.toPath());
-            // read: plugins/DeerlingBot/templates/<templateName>/
-            File[] templateFiles = templateFileRoot.listFiles();
-            if (templateFiles == null) {
-                throw new RuntimeException("读取目录失败: " + templateFileRoot.getAbsolutePath());
-            }
-            resourcesFileContent.putAll(loadResourcesRecursively(templateFiles, templateName + "/"));
-            // read: plugins/DeerlingBot/templates/public/
-            File[] publicFiles = publicFileRoot.listFiles();
-            if (publicFiles == null) {
-                throw new RuntimeException("读取目录失败: " + publicFileRoot.getAbsolutePath());
-            }
-            resourcesFileContent.putAll(loadResourcesRecursively(publicFiles, "public/"));
-        } catch (Exception e) {
-            throw new RuntimeException("读取模板文件失败: " + e.getMessage(), e);
+            // 先读取模板，避免构造失败时遗留临时文件。
+            indexFileContent = Files.readString(templateDirectory.resolve("index.html"));
+        } catch (IOException e) {
+            throw new IllegalStateException("读取模板文件失败: " + templateDirectory, e);
         }
     }
 
     public TemplateFactory setPlaceholder(String key, String value) {
+        ensureOpen();
         indexFileContent = indexFileContent.replace("{{" + key + "}}", value);
         return this;
     }
 
     public File build(OfflinePlayer player) {
+        ensureOpen();
+        String content = indexFileContent;
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            content = PlaceHolderApiManager.setPlaceholders(player, content);
+        }
+        return writeTemplate(content);
+    }
+
+    File writeTemplate(String content) {
+        ensureOpen();
         try {
-            if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
-                indexFileContent = PlaceHolderApiManager.setPlaceholders(player, indexFileContent);
-            File indexFile = new File(outputPath.toFile(), templateName + "/index.html");
-            if (!indexFile.getParentFile().exists()) {
-                boolean re = indexFile.getParentFile().mkdirs();
+            if (outputFile == null) {
+                // 与 index.html 保持同级，自定义相对资源和 <base> 无需改写或复制。
+                outputFile = Files.createTempFile(templateDirectory, ".deerlingbot-render-", ".html");
             }
-            XLogger.debug(indexFileContent);
-            Files.writeString(indexFile.toPath(), indexFileContent);
-            for (Map.Entry<String, byte[]> entry : resourcesFileContent.entrySet()) {
-                File resourceFile = new File(outputPath.toFile(), entry.getKey());
-                if (!resourceFile.getParentFile().exists()) {
-                    boolean re = resourceFile.getParentFile().mkdirs();
-                }
-                Files.write(resourceFile.toPath(), entry.getValue());
+            Files.writeString(outputFile, content);
+            return outputFile.toFile();
+        } catch (IOException e) {
+            try {
+                close();
+            } catch (IOException cleanupError) {
+                e.addSuppressed(cleanupError);
             }
-            return indexFile;
-        } catch (Exception e) {
-            throw new RuntimeException("写入模板文件失败：" + e.getMessage(), e);
+            throw new IllegalStateException("写入模板失败，请确认模板目录可写: " + templateDirectory, e);
         }
     }
 
     @Override
-    public void close() throws Exception {
-        if (outputPath.toFile().exists()) {
-            boolean re = outputPath.toFile().delete();
-        }
-        if (resourcesFileContent != null) {
-            resourcesFileContent.clear();
-        }
+    public void close() throws IOException {
+        closed = true;
         indexFileContent = null;
-        resourcesFileContent = null;
+        if (outputFile != null) {
+            Files.deleteIfExists(outputFile);
+        }
     }
 
-    private static Map<String, byte[]> loadResourcesRecursively(@NotNull File[] files, String prefix) {
-        Map<String, byte[]> resources = new HashMap<>();
-        for (File child : files) {
-            if (child.isDirectory()) {
-                File[] f = child.listFiles();
-                if (f == null) {
-                    throw new RuntimeException("读取目录失败: " + child.getAbsolutePath());
-                }
-                resources.putAll(loadResourcesRecursively(f, prefix + child.getName() + "/"));
-            } else {
-                if (child.getName().equals("index.html")) return resources;
-                try {
-                    resources.put(prefix + child.getName(), Files.readAllBytes(child.toPath()));
-                } catch (Exception e) {
-                    throw new RuntimeException("读取文件失败: " + child.getAbsolutePath() + " " + e.getMessage(), e);
-                }
-            }
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("TemplateFactory is closed");
         }
-        return resources;
     }
 }
