@@ -1,8 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.tables;
 
 import cn.lunadeer.mc.deerlingbot.utils.databse.FIelds.*;
-import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Delete;
-import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Insert;
+import cn.lunadeer.mc.deerlingbot.utils.databse.DatabaseManager;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Select;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Table.Column;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Table.Create;
@@ -14,14 +13,20 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.generateCode;
 
 public class WhitelistTable {
 
-    private static WhitelistTable instance;
+    private static volatile WhitelistTable instance;
+    private final BindingStore bindings;
 
     public WhitelistTable() throws SQLException {
+        this(() -> generateCode());
+    }
+
+    WhitelistTable(Supplier<String> codeGenerator) throws SQLException {
         Column user_record_id = Column.of(new FieldInteger("id")).primary().serial().notNull().unique();
         Column user_user_id = Column.of(new FieldLong("user_id")).notNull().defaultSqlVal("'0'");
         Column user_record_uuid = Column.of(new FieldString("uuid")).notNull().unique();
@@ -38,10 +43,12 @@ public class WhitelistTable {
                 .column(user_record_bind)
                 .column(user_record_code)
                 .execute();
+        bindings = new BindingStore(DatabaseManager.instance, codeGenerator);
+        bindings.initialize();
         instance = this;
     }
 
-    public static WhitelistTable getInstance() {
+    public static synchronized WhitelistTable getInstance() {
         if (instance == null) {
             try {
                 instance = new WhitelistTable();
@@ -52,14 +59,9 @@ public class WhitelistTable {
         return instance;
     }
 
-    public void createRecord(UUID uuid, String name, String code) {
+    public String createRecord(UUID uuid, String name, String code) {
         try {
-            Insert.insert().into("user_record")
-                    .values(new FieldString("uuid", uuid.toString()),
-                            new FieldString("last_known_name", name),
-                            new FieldString("code", code.toUpperCase()),
-                            new FieldTimestamp("last_join_at", Timestamp.valueOf(LocalDateTime.now())))
-                    .onConflict("uuid").doNothing().execute();
+            return bindings.createRecord(uuid, name, code);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -123,23 +125,13 @@ public class WhitelistTable {
         return !(boolean) res.get(0).get("bind").getValue();
     }
 
-    public void setBind(String code, long userId) throws Exception {
-        Update.update("user_record")
-                .set(new FieldBoolean("bind", true), new FieldLong("user_id", userId))
-                .where("code = ?", code.toUpperCase())
-                .execute();
+    public boolean setBind(String code, long userId) throws Exception {
+        return bindings.bind(code, userId);
     }
 
-        public void setUnbind(long userId) throws Exception {
-        Update.update("user_record")
-            .set(
-                new FieldBoolean("bind", false),
-                new FieldLong("user_id", 0L),
-                new FieldString("code", generateCode())
-            )
-            .where("user_id = ?", userId)
-            .execute();
-        }
+    public void setUnbind(long userId) throws Exception {
+        bindings.unbind(userId);
+    }
 
     public void setName(UUID uuid, String name) throws Exception {
         Update.update("user_record")
@@ -192,8 +184,6 @@ public class WhitelistTable {
     }
 
     public void deletePlayer(long userId) throws Exception {
-        Delete.delete().from("user_record")
-                .where("user_id = ?", userId)
-                .execute();
+        bindings.deletePlayer(userId);
     }
 }
