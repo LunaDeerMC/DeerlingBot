@@ -79,8 +79,11 @@ public class JoinLeaveEvents implements Listener {
     public void onGroupIncrease(GroupIncrease event) {
         if (!Configuration.groupList.contains(String.valueOf(event.getGroupId())))
             return;
+        if (event.getUserId() == event.getSelfId())
+            return;
 
-        if (Configuration.postJoinReview.enable && event.getSubType() == GroupIncrease.SubType.approve) {
+        // 申请通过和邀请入群均验证加入者，邀请者的身份不影响审核。
+        if (Configuration.postJoinReview.enable) {
             startPostJoinReview(event.getGroupId(), event.getUserId());
             return;
         }
