@@ -69,65 +69,68 @@ public class CoreConnector {
                 webSocket.request(1);
                 return null;
             }
-            String sqlStr = messageBuffer.toString();
+            String rawMessage = messageBuffer.toString();
             messageBuffer.setLength(0); // 清空缓冲区
             webSocket.request(1);
-            JSONObject jsonObject;
             try {
-                jsonObject = JSONObject.parseObject(sqlStr);
-            } catch (Exception e) {
-                XLogger.error("JSON解析异常: " + e.getMessage() + "，原始数据：" + sqlStr);
-                return null;
+                handleMessage(rawMessage);
+            } catch (RuntimeException e) {
+                // 隔离整条上报的解析/调度异常，让后续消息继续使用当前连接。
+                XLogger.warn("忽略无法处理的 OneBot 消息: {0}", e.getMessage());
+                XLogger.debug("无效消息内容: {0}", rawMessage);
             }
-
-            String postType = jsonObject.getString("post_type");
-            if (message.name().equals(postType)) {
-                String messageType = jsonObject.getString("message_type");
-                if (messageType.equals("group")) {
-                    GroupMessage.parse(jsonObject).call();
-                } else if (messageType.equals("private")) {
-                    PrivateMessage.parse(jsonObject).call();
-                } else {
-                    return null;
-                }
-            } else if (notice.name().equals(postType)) {
-                String noticeType = jsonObject.getString("notice_type");
-                if (group_admin.name().equals(noticeType)) {
-                    GroupAdmin.parse(jsonObject).call();
-                } else if (group_increase.name().equals(noticeType)) {
-                    GroupIncrease.parse(jsonObject).call();
-                } else if (group_decrease.name().equals(noticeType)) {
-                    GroupDecrease.parse(jsonObject).call();
-                } else if (group_ban.name().equals(noticeType)) {
-                    GroupBan.parse(jsonObject).call();
-                } else {
-                    return null;
-                }
-            } else if (request.name().equals(postType)) {
-                String requestType = jsonObject.getString("request_type");
-                if ("group".equals(requestType)) {
-                    GroupRequest.parse(jsonObject).call();
-                } else {
-                    return null;
-                }
-            } else if (meta_event.name().equals(postType)) {
-                XLogger.debug("收到 meta_event: " + sqlStr);
-                String metaEventType = jsonObject.getString("meta_event_type");
-                if (metaEventType.equals("lifecycle")) {
-                    String subType = jsonObject.getString("sub_type");
-                    if (subType.equals("connect")) {
-                        XLogger.debug("连接成功，原始数据：" + sqlStr);
-                    } else if (subType.equals("heartbeat")) {
-                        XLogger.debug("收到心跳事件，原始数据：" + sqlStr);
-                    }
-                }
-            } else {
-                XLogger.debug("未知的 post_type: " + postType + "，原始数据：" + sqlStr);
-            }
-
             return null;
         }
     };
+
+    private void handleMessage(String rawMessage) {
+        JSONObject jsonObject = JSONObject.parseObject(rawMessage);
+        if (jsonObject == null) throw new IllegalArgumentException("OneBot 消息必须是 JSON 对象");
+        String postType = jsonObject.getString("post_type");
+        if (message.name().equals(postType)) {
+            String messageType = jsonObject.getString("message_type");
+            if ("group".equals(messageType)) {
+                GroupMessage.parse(jsonObject).call();
+            } else if ("private".equals(messageType)) {
+                PrivateMessage.parse(jsonObject).call();
+            } else {
+                return;
+            }
+        } else if (notice.name().equals(postType)) {
+            String noticeType = jsonObject.getString("notice_type");
+            if (group_admin.name().equals(noticeType)) {
+                GroupAdmin.parse(jsonObject).call();
+            } else if (group_increase.name().equals(noticeType)) {
+                GroupIncrease.parse(jsonObject).call();
+            } else if (group_decrease.name().equals(noticeType)) {
+                GroupDecrease.parse(jsonObject).call();
+            } else if (group_ban.name().equals(noticeType)) {
+                GroupBan.parse(jsonObject).call();
+            } else {
+                return;
+            }
+        } else if (request.name().equals(postType)) {
+            String requestType = jsonObject.getString("request_type");
+            if ("group".equals(requestType)) {
+                GroupRequest.parse(jsonObject).call();
+            } else {
+                return;
+            }
+        } else if (meta_event.name().equals(postType)) {
+            XLogger.debug("收到 meta_event: {0}", rawMessage);
+            String metaEventType = jsonObject.getString("meta_event_type");
+            if ("lifecycle".equals(metaEventType)) {
+                String subType = jsonObject.getString("sub_type");
+                if ("connect".equals(subType)) {
+                    XLogger.debug("连接成功，原始数据：{0}", rawMessage);
+                } else if ("heartbeat".equals(subType)) {
+                    XLogger.debug("收到心跳事件，原始数据：{0}", rawMessage);
+                }
+            }
+        } else {
+            XLogger.debug("未知的 post_type: {0}，原始数据：{1}", postType, rawMessage);
+        }
+    }
 
     public void send(JSONObject message) {
         if (!EventIoService.canSendFromCurrentTask()) return;

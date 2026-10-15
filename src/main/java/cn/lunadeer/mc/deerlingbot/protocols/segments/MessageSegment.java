@@ -14,7 +14,13 @@ public abstract class MessageSegment {
         return switch (type) {
             case "at" -> "all".equals(data.getString("qq"))
                     ? MentionSegment.all() : new MentionSegment(data.getLong("qq"));
-            case "text" -> new TextSegment(data.getString("text"));
+            case "text" -> {
+                // 文本会交给异步业务处理，必须在接收边界拒绝无效字段。
+                if (data == null || !(data.get("text") instanceof String text)) {
+                    throw new IllegalArgumentException("文本消息段缺少有效的 text 字符串");
+                }
+                yield new TextSegment(text);
+            }
             case "image" -> null; // no support for image segment parsing yet
             case "reply" -> new ReplySegment(data.getLong("id"));
             default -> null;

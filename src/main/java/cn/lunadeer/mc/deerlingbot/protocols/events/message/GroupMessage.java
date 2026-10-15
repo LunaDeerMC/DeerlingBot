@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.protocols.events.message;
 
 import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageSegment;
+import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageParser;
 import com.alibaba.fastjson2.JSONObject;
 
 import java.util.List;
@@ -112,7 +113,7 @@ public class GroupMessage extends Message {
                 jsonObject.getIntValue("message_id"),
                 jsonObject.getLongValue("group_id"),
                 jsonObject.getLongValue("user_id"),
-                MessageSegment.parse(jsonObject.getJSONArray("message")),
+                MessageParser.parse(jsonObject.get("message")),
                 jsonObject.getString("raw_message"),
                 sender
         );
