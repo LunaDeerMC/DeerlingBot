@@ -49,13 +49,14 @@ public class CoreConnector {
         }
     }
 
-    private final static WebSocket.Listener listener = new WebSocket.Listener() {
+    private final WebSocket.Listener listener = new WebSocket.Listener() {
 
         // 用于累积接收到的文本帧
         private final StringBuilder messageBuffer = new StringBuilder();
 
         @Override
         public void onOpen(WebSocket webSocket) {
+            messageBuffer.setLength(0); // 新连接不能继承旧连接未收完的分片。
             webSocket.request(1); // Request one message
         }
 
