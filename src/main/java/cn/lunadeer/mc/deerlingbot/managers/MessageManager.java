@@ -55,8 +55,9 @@ public class MessageManager implements Listener {
 
     @EventHandler
     public void handleGroupMessageToServer(GroupMessage event) {
-        XLogger.debug("收到群消息: userID={0}, nickName={1}, text={2}", event.getUserId(), event.getSender().getNickname(), event.getMessage());
         if (!Configuration.messageTransfer.enable) return;
+        if (!String.valueOf(event.getGroupID()).equals(Configuration.messageTransfer.groupId)) return;
+        XLogger.debug("收到群消息: userID={0}, nickName={1}, text={2}", event.getUserId(), event.getSender().getNickname(), event.getMessage());
         if (event.getMessage().isEmpty()) return;
         MessageSegment firstSegment = event.getMessage().get(0);
         if (!(firstSegment instanceof TextSegment textSegment)) return;
@@ -65,7 +66,7 @@ public class MessageManager implements Listener {
         try {
             if (Configuration.messageTransfer.bindRequired && !WhitelistTable.getInstance().isBind(event.getUserId())) {
                 if (!Configuration.messageTransfer.groupFlag.isEmpty()) {
-                    GroupOperation.SendGroupMessage(Long.parseLong(Configuration.messageTransfer.groupId),
+                    GroupOperation.SendGroupMessage(event.getGroupID(),
                             new ReplySegment(event.getMessageId()),
                             new TextSegment(MessageText.messageManagerText.bindRequired));
                 }

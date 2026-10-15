@@ -56,7 +56,8 @@ public class Configuration extends ConfigurationFile {
 
     @Comments({
             "机器人接收指令的群聊列表",
-            "仅以下群聊的指令会被机器人识别并执行"
+            "仅以下群聊的指令会被机器人识别并执行",
+            "玩家退出列表中的任意一个群时撤销绑定，退出其他群不影响绑定"
     })
     public static List<String> groupList = List.of("12345678", "87654321");
 

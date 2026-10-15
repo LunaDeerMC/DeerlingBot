@@ -90,6 +90,7 @@ public class BindManager implements Listener {
 
     @EventHandler
     public void onQuitGroup(GroupDecrease event) {
+        if (!Configuration.groupList.contains(String.valueOf(event.getGroupId()))) return;
         try {
             WhitelistTable.getInstance().deletePlayer(event.getUserId());
         } catch (Exception e) {

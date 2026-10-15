@@ -43,6 +43,12 @@ allprojects {
     dependencies {
         compileOnly("io.papermc.paper:paper-api:1.20.1-R0.1-SNAPSHOT")
         compileOnly("me.clip:placeholderapi:2.11.6")
+        testImplementation("io.papermc.paper:paper-api:1.20.1-R0.1-SNAPSHOT")
+        testImplementation("me.clip:placeholderapi:2.11.6")
+        testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+        testImplementation("org.mockito:mockito-core:5.12.0")
+        testImplementation("org.xerial:sqlite-jdbc:3.45.3.0")
+        libraries.forEach { testImplementation(it) }
         if (!buildFull) {
             libraries.forEach {
                 compileOnly(it)
@@ -71,6 +77,10 @@ allprojects {
                 }
             }
         }
+    }
+
+    tasks.test {
+        useJUnitPlatform()
     }
 
     tasks.shadowJar {
