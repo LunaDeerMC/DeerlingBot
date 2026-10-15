@@ -12,7 +12,8 @@ public abstract class MessageSegment {
         String type = jsonObject.getString("type");
         JSONObject data = jsonObject.getJSONObject("data");
         return switch (type) {
-            case "at" -> new MentionSegment(data.getLong("qq"));
+            case "at" -> "all".equals(data.getString("qq"))
+                    ? MentionSegment.all() : new MentionSegment(data.getLong("qq"));
             case "text" -> new TextSegment(data.getString("text"));
             case "image" -> null; // no support for image segment parsing yet
             case "reply" -> new ReplySegment(data.getLong("id"));
