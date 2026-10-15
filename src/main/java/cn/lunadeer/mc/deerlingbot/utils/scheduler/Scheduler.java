@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.utils.scheduler;
 
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.entity.Player;
 
 import java.util.concurrent.TimeUnit;
 
@@ -56,6 +57,15 @@ public class Scheduler {
         } else {
             return new SpigotTask(instance.plugin.getServer().getScheduler().runTask(instance.plugin, task));
         }
+    }
+
+    /** 玩家相关操作在 Folia 的实体线程执行，传统服务端则回到主线程。 */
+    public static CancellableTask runTask(Player player, Runnable task) {
+        if (instance.isPaper) {
+            var scheduled = player.getScheduler().run(instance.plugin, ignored -> task.run(), null);
+            return scheduled == null ? null : new PaperTask(scheduled);
+        }
+        return runTask(task);
     }
 
     /**

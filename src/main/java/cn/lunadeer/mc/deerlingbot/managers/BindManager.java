@@ -1,14 +1,15 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
-import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupBan;
 import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.Notification;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
-import org.bukkit.OfflinePlayer;
+import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -56,30 +57,49 @@ public class BindManager implements Listener {
         }
     }
 
-    @EventHandler
-    public void onPlayerJoin(PlayerJoinEvent event) {
-        OfflinePlayer player = event.getPlayer();
-        UUID uuid = player.getUniqueId();
-        String code;
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
+        if (event.getLoginResult() != AsyncPlayerPreLoginEvent.Result.ALLOWED) return;
+        UUID uuid = event.getUniqueId();
         try {
-            if (WhitelistTable.getInstance().isRecorded(uuid)) {
-                WhitelistTable.getInstance().setName(uuid, player.getName());    // update name
-                if (WhitelistTable.getInstance().isBind(uuid)) return;
-                code = WhitelistTable.getInstance().getCode(uuid);
-            } else {
-                code = generateCode();
-                code = WhitelistTable.getInstance().createRecord(uuid, player.getName(), code);
+            WhitelistTable table = WhitelistTable.getInstance();
+            WhitelistTable.LoginRecord record = table.getLoginRecord(uuid);
+            if (record == null) {
+                table.createRecord(uuid, event.getName(), generateCode());
+                // 使用实际入库的验证码，兼容碰撞重试和同 UUID 的并发登录。
+                record = table.getLoginRecord(uuid);
             }
+            if (record == null) throw new IllegalStateException("登录记录已失效，请重新连接");
+            if (Configuration.whiteList.required && !record.bound()) {
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST,
+                        Configuration.whiteList.getKickMessage(record.code()));
+                return;
+            }
+            table.setName(uuid, event.getName());
         } catch (Exception e) {
             XLogger.error(e);
-            event.getPlayer().kickPlayer(e.getMessage());
-            return;
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,
+                    "无法验证白名单，请稍后重试或联系管理员。");
         }
-        if (Configuration.whiteList.required) {
-            event.getPlayer().kickPlayer(Configuration.whiteList.getKickMessage(code));
-        } else {
-            Notification.info(event.getPlayer(), Configuration.whiteList.getBindMessage(code));
-        }
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        if (Configuration.whiteList.required) return;
+        var player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
+        // 可选绑定提示也异步查库，玩家消息交回其所属线程发送。
+        Scheduler.runTaskAsync(() -> {
+            try {
+                WhitelistTable.LoginRecord record = WhitelistTable.getInstance().getLoginRecord(uuid);
+                if (record == null || record.bound()) return;
+                Scheduler.runTask(player, () -> {
+                    if (player.isOnline()) Notification.info(player, Configuration.whiteList.getBindMessage(record.code()));
+                });
+            } catch (Exception e) {
+                XLogger.error(e);
+            }
+        });
     }
 
     @EventHandler

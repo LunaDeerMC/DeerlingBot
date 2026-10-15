@@ -76,6 +76,18 @@ public class WhitelistTable {
         return !res.isEmpty();
     }
 
+    public record LoginRecord(boolean bound, String code) { }
+
+    /** 一次查询取得准入检查所需的绑定状态和验证码。 */
+    public LoginRecord getLoginRecord(UUID uuid) throws SQLException {
+        List<Map<String, Field<?>>> rows = Select
+                .select(new FieldBoolean("bind", false), new FieldString("code", ""))
+                .from("user_record").where("uuid = ?", uuid.toString()).execute();
+        if (rows.isEmpty()) return null;
+        return new LoginRecord((boolean) rows.get(0).get("bind").getValue(),
+                (String) rows.get(0).get("code").getValue());
+    }
+
     public boolean isRecorded(long userId) throws Exception {
         List<Map<String, Field<?>>> res = Select
                 .select(new FieldBoolean("bind", false))
