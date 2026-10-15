@@ -22,8 +22,15 @@ public class BukkitCommand {
     )) {
         @Override
         public void executeHandler(CommandSender sender) {
-            DeerlingBot.getInstance().onDisable();
-            DeerlingBot.getInstance().onEnable();
+            try {
+                boolean databaseRestartRequired = DeerlingBot.getInstance().reloadConfiguration();
+                Notification.info(sender, "配置已重新加载。");
+                if (databaseRestartRequired) {
+                    Notification.warn(sender, "数据库连接配置已保存，重启服务器后生效；当前继续使用原数据库。");
+                }
+            } catch (Exception e) {
+                sender.sendMessage("配置重载失败，插件已停用，请检查控制台日志。");
+            }
         }
     }.needPermission(adminPermission).register();
 

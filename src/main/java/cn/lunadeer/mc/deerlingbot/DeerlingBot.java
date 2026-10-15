@@ -10,6 +10,7 @@ import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationManager;
 import cn.lunadeer.mc.deerlingbot.utils.databse.DatabaseManager;
 import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.Bukkit;
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -18,6 +19,30 @@ import java.sql.SQLException;
 public final class DeerlingBot extends JavaPlugin {
 
     private static DeerlingBot instance;
+    private DatabaseManager database;
+    private DatabaseSettings databaseSettings;
+    private CoreConnector connector;
+    private CommandManager botCommands;
+    private WebDriverManager webDriver;
+    private PlaceHolderApiManager placeholders;
+
+    private record DatabaseSettings(String type, String host, String port, String name, String user, String password) {
+        static DatabaseSettings current() {
+            var config = Configuration.database;
+            return new DatabaseSettings(config.type, config.host, config.port, config.database, config.username, config.password);
+        }
+
+        void restoreRuntime() {
+            var config = new Configuration.Database();
+            config.type = type;
+            config.host = host;
+            config.port = port;
+            config.database = name;
+            config.username = user;
+            config.password = password;
+            Configuration.database = config;
+        }
+    }
 
     @Override
     public void onEnable() {
@@ -28,8 +53,7 @@ public final class DeerlingBot extends JavaPlugin {
         new XLogger(this);
         new ResourceDownloader(this);
         try {
-            ConfigurationManager.load(Configuration.class, new File(getDataFolder(), "config.yml"));
-            ConfigurationManager.load(MessageText.class, new File(getDataFolder(), "messages.yml"));
+            loadSettings();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -45,33 +69,101 @@ public final class DeerlingBot extends JavaPlugin {
         XLogger.info("                                   __/ |                ");
         XLogger.info("                                  |___/                 ");
         new BukkitCommand(this);
-        new DatabaseManager(this,
-                Configuration.database.type, Configuration.database.host,
-                Configuration.database.port, Configuration.database.database, Configuration.database.username,
-                Configuration.database.password);
-        new CoreConnector().open();
-        new CommandManager(this);
-        new BindManager(this);
-        new MessageManager(this);
-        new WebDriverManager(this);
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            new PlaceHolderApiManager(this);
+        try {
+            configureDatabase();
+            botCommands = new CommandManager(this);
+            new BindManager(this);
+            new MessageManager(this);
+            webDriver = new WebDriverManager(this);
+            if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+                placeholders = new PlaceHolderApiManager(this);
+            }
+            getServer().getPluginManager().registerEvents(new JoinLeaveEvents(), this);
+            // 数据表与监听器准备完成后才接收 OneBot 事件。
+            connector = new CoreConnector();
+            connector.open();
+        } catch (Exception e) {
+            getServer().getPluginManager().disablePlugin(this);
+            throw new RuntimeException(e);
         }
-        this.getServer().getPluginManager().registerEvents(new JoinLeaveEvents(), this);
+    }
 
+    private void loadSettings() throws Exception {
+        ConfigurationManager.load(Configuration.class, new File(getDataFolder(), "config.yml"));
+        ConfigurationManager.load(MessageText.class, new File(getDataFolder(), "messages.yml"));
+        XLogger.setDebug(Configuration.debug);
+    }
+
+    private void configureDatabase() throws SQLException {
+        DatabaseSettings next = DatabaseSettings.current();
+        if (next.equals(databaseSettings)) return;
+        DatabaseManager previous = database;
+        DatabaseManager replacement = new DatabaseManager(this, next.type(), next.host(), next.port(),
+                next.name(), next.user(), next.password());
         try {
             new WhitelistTable();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        } catch (Exception e) {
+            replacement.close();
+            DatabaseManager.instance = previous;
+            throw e;
+        }
+        database = replacement;
+        databaseSettings = next;
+        if (previous != null) previous.close();
+    }
+
+    public boolean reloadConfiguration() throws Exception {
+        try {
+            loadSettings();
+            // 在途异步指令仍使用当前库，连接参数变更留待重启，避免跨库执行同一操作。
+            boolean databaseRestartRequired = !DatabaseSettings.current().equals(databaseSettings);
+            if (databaseRestartRequired) databaseSettings.restoreRuntime();
+            botCommands.reloadCommands();
+            webDriver.close();
+            webDriver = new WebDriverManager(this);
+            connector.close();
+            connector.open();
+            // 保留监听器及正在进行的入群审核，避免重复注册或丢失审核超时任务。
+            return databaseRestartRequired;
+        } catch (Exception e) {
+            XLogger.error(e);
+            getServer().getPluginManager().disablePlugin(this);
+            throw e;
         }
     }
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
-        DatabaseManager.instance.close();
-        CoreConnector.getInstance().close();
-        WebDriverManager.getInstance().close();
+        // 每项清理独立执行，部分初始化失败也能安全关闭其余资源。
+        if (connector != null) closeResource(connector::close);
+        closeResource(() -> HandlerList.unregisterAll(this));
+        closeResource(Scheduler::cancelAll);
+        if (webDriver != null) closeResource(webDriver::close);
+        if (placeholders != null) closeResource(() -> {
+            try {
+                placeholders.unregister();
+            } finally {
+                PlaceHolderApiManager.instance = null;
+            }
+        });
+        if (database != null) closeResource(database::close);
+        closeResource(cn.lunadeer.mc.deerlingbot.utils.command.CommandManager::close);
+        closeResource(Notification::close);
+        connector = null;
+        webDriver = null;
+        placeholders = null;
+        database = null;
+        databaseSettings = null;
+        botCommands = null;
+        instance = null;
+    }
+
+    private void closeResource(Runnable cleanup) {
+        try {
+            cleanup.run();
+        } catch (Exception e) {
+            getLogger().log(java.util.logging.Level.SEVERE, "关闭插件资源失败", e);
+        }
     }
 
     public static DeerlingBot getInstance() {

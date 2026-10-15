@@ -5,7 +5,6 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 
@@ -16,7 +15,8 @@ public class DatabaseManager {
     private final JavaPlugin plugin;
     private DatabaseType type;
     private final HikariConfig config = new HikariConfig();
-    private DataSource ds;
+    private HikariDataSource ds;
+    private boolean closed;
 
     /**
      * Constructs a new DatabaseManager instance with the provided parameters.
@@ -70,25 +70,35 @@ public class DatabaseManager {
         }
     }
 
-    public void reconnect() {
-        if (ds != null) {
-            close();
-        }
-        this.ds = new HikariDataSource(config);
+    public synchronized void reconnect() {
+        if (closed) throw new IllegalStateException("数据库连接池已关闭");
+        HikariDataSource previous = ds;
+        ds = new HikariDataSource(config);
+        if (previous != null) previous.close();
     }
 
     public Connection getConnection() throws SQLException {
-        if (ds == null) {
-            reconnect();
+        HikariDataSource current;
+        synchronized (this) {
+            if (closed) throw new SQLException("数据库连接池已关闭");
+            if (ds == null) reconnect();
+            current = ds;
         }
-        return ds.getConnection();
+        return current.getConnection();
     }
 
     /**
      * Closes the database connection if it is open.
      */
-    public void close() {
-        this.ds = null;
+    public synchronized void close() {
+        closed = true;
+        if (ds != null) {
+            try {
+                ds.close();
+            } finally {
+                ds = null;
+            }
+        }
     }
 
     /**

@@ -37,12 +37,12 @@ public class CommandManager implements Listener {
 
     private static CommandManager instance;
     private final JavaPlugin plugin;
-    private final List<BotCommand> commands = new ArrayList<>();
+    private volatile List<BotCommand> commands = List.of();
 
     public CommandManager(JavaPlugin plugin) {
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         this.plugin = plugin;
-        loadCommands();
+        reloadCommands();
         instance = this;
     }
 
@@ -200,7 +200,8 @@ public class CommandManager implements Listener {
         }
     }
 
-    private void loadCommands() {
+    public void reloadCommands() {
+        List<BotCommand> loaded = new ArrayList<>();
         List<String> classesInPackage = listClassOfPackage(plugin, "cn.lunadeer.mc.deerlingbot.commands");
 
         for (String className : classesInPackage) {
@@ -213,13 +214,14 @@ public class CommandManager implements Listener {
                         continue;
                     }
                     BotCommand command = (BotCommand) clazz.getDeclaredConstructor().newInstance();
-                    commands.add(command);
+                    loaded.add(command);
                     XLogger.debug("Registered command: {0}", command.getCommand());
                 }
             } catch (Exception e) {
                 XLogger.debug("Failed to register command: {0}", e.getMessage());
             }
         }
+        commands = List.copyOf(loaded);
     }
 
 }

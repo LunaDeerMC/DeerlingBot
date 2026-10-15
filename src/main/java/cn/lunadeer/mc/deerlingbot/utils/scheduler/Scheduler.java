@@ -18,9 +18,10 @@ public class Scheduler {
     }
 
     public static void cancelAll() {
+        if (instance == null) return;
         if (instance.isPaper) {
             instance.plugin.getServer().getGlobalRegionScheduler().cancelTasks(instance.plugin);
-            instance.plugin.getServer().getGlobalRegionScheduler().cancelTasks(instance.plugin);
+            instance.plugin.getServer().getAsyncScheduler().cancelTasks(instance.plugin);
         } else {
             instance.plugin.getServer().getScheduler().cancelTasks(instance.plugin);
         }

@@ -8,6 +8,7 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
@@ -40,6 +41,14 @@ public class CommandManager implements TabExecutor, Listener {
             throw new IllegalStateException("CommandManager is not initialized.");
         }
         return instance;
+    }
+
+    public static void close() {
+        if (instance != null) HandlerList.unregisterAll(instance);
+        commands.clear();
+        commandsUsable.clear();
+        instance = null;
+        rootCommand = null;
     }
 
     /**

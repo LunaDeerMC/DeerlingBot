@@ -34,6 +34,14 @@ public class Notification {
         }
     }
 
+    public static void close() {
+        if (adventure != null) {
+            adventure.close();
+            adventure = null;
+        }
+        instance = null;
+    }
+
     private String prefix;
     private JavaPlugin plugin;
 
