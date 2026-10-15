@@ -34,7 +34,7 @@ class LoginAdmissionTest {
         Server server = mock(Server.class);
         when(plugin.getServer()).thenReturn(server);
         when(server.getPluginManager()).thenReturn(mock(PluginManager.class));
-        manager = new BindManager(plugin);
+        manager = new BindManager(plugin, mock(EventIoService.class));
         Configuration.whiteList = new Configuration.WhiteList();
     }
 

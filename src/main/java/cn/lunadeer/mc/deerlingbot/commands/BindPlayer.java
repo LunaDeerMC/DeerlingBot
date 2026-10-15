@@ -47,9 +47,11 @@ public class BindPlayer extends BotCommand {
             return;
         }
         String code = args[0];
+        BindManager bindManager = BindManager.getInstance();
+        WhitelistTable table = WhitelistTable.getInstance();
 
         try {
-            if (WhitelistTable.getInstance().isBind(userID)) {
+            if (table.isBind(userID)) {
                 XLogger.debug("User {0} is already verified", userID);
                 if (groupID != null)
                     GroupOperation.SendGroupMessage(groupID,
@@ -66,7 +68,7 @@ public class BindPlayer extends BotCommand {
             return;
         }
 
-        if (BindManager.getInstance().bind(userID, code)) {
+        if (bindManager.bind(userID, code, table)) {
             if (groupID != null)
                 GroupOperation.SendGroupMessage(groupID,
                         new ReplySegment(messageID),

@@ -20,10 +20,16 @@ import static cn.lunadeer.mc.deerlingbot.utils.Misc.generateCode;
 public class BindManager implements Listener {
 
     private final JavaPlugin plugin;
+    private final EventIoService eventIo;
     private static BindManager instance;
 
     public BindManager(JavaPlugin plugin) {
+        this(plugin, EventIoService.getInstance());
+    }
+
+    BindManager(JavaPlugin plugin, EventIoService eventIo) {
         this.plugin = plugin;
+        this.eventIo = eventIo;
         instance = this;
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
@@ -37,7 +43,16 @@ public class BindManager implements Listener {
 
     public boolean bind(long userId, String code) {
         try {
-            return WhitelistTable.getInstance().setBind(code, userId);
+            return bind(userId, code, WhitelistTable.getInstance());
+        } catch (Exception e) {
+            XLogger.error(e);
+            return false;
+        }
+    }
+
+    public boolean bind(long userId, String code, WhitelistTable bindingTable) {
+        try {
+            return bindingTable.setBind(code, userId);
         } catch (Exception e) {
             XLogger.error(e);
             return false;
@@ -46,10 +61,19 @@ public class BindManager implements Listener {
 
     public boolean unbind(long userId) {
         try {
-            if (!WhitelistTable.getInstance().isBind(userId)) {
+            return unbind(userId, WhitelistTable.getInstance());
+        } catch (Exception e) {
+            XLogger.error(e);
+            return false;
+        }
+    }
+
+    public boolean unbind(long userId, WhitelistTable bindingTable) {
+        try {
+            if (!bindingTable.isBind(userId)) {
                 return false;
             }
-            WhitelistTable.getInstance().setUnbind(userId);
+            bindingTable.setUnbind(userId);
             return true;
         } catch (Exception e) {
             XLogger.error(e);
@@ -105,10 +129,14 @@ public class BindManager implements Listener {
     @EventHandler
     public void onQuitGroup(GroupDecrease event) {
         if (!Configuration.groupList.contains(String.valueOf(event.getGroupId()))) return;
-        try {
-            WhitelistTable.getInstance().deletePlayer(event.getUserId());
-        } catch (Exception e) {
-            XLogger.error(e);
-        }
+        long userId = event.getUserId();
+        WhitelistTable bindingTable = WhitelistTable.getInstance();
+        eventIo.submitDeletion(userId, () -> {
+            try {
+                bindingTable.deletePlayerForGroupLeave(userId);
+            } catch (Exception e) {
+                throw new IllegalStateException("退群解绑失败，QQ " + userId + "，请核对绑定数据。", e);
+            }
+        });
     }
 }

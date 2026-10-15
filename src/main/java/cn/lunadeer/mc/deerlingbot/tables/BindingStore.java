@@ -3,6 +3,7 @@ package cn.lunadeer.mc.deerlingbot.tables;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.databse.DatabaseManager;
 import cn.lunadeer.mc.deerlingbot.utils.databse.DatabaseType;
+import cn.lunadeer.mc.deerlingbot.utils.databse.EventQueryTimeout;
 
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -174,6 +175,21 @@ final class BindingStore {
         transaction(connection -> {
             execute(connection, "DELETE FROM user_record WHERE user_id = ?", userId);
             execute(connection, "DELETE FROM user_binding WHERE user_id = ?", userId);
+            return null;
+        });
+    }
+
+    void deletePlayerForGroupLeave(long userId) throws SQLException {
+        if (userId <= 0) return;
+        transaction(connection -> {
+            EventQueryTimeout.configure(connection);
+            for (String table : List.of("user_record", "user_binding")) {
+                try (PreparedStatement statement = connection.prepareStatement("DELETE FROM " + table + " WHERE user_id = ?")) {
+                    statement.setQueryTimeout(EventQueryTimeout.SECONDS);
+                    statement.setLong(1, userId);
+                    statement.executeUpdate();
+                }
+            }
             return null;
         });
     }

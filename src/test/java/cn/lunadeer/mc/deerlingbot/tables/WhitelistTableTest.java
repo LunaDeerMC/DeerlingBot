@@ -214,6 +214,36 @@ class WhitelistTableTest {
         assertEquals(1, number("SELECT COUNT(*) FROM user_binding WHERE user_id = 11"));
     }
 
+    @Test
+    void groupEventQueriesUseOneSnapshotAndDeletionReleasesTheBindingClaim() throws Exception {
+        WhitelistTable table = new WhitelistTable();
+        UUID player = UUID.randomUUID();
+        table.createRecord(player, "Player", "CODE11");
+        assertFalse(table.getForwardingRecord(11L).bound());
+        assertTrue(table.setBind("CODE11", 11L));
+        assertEquals(new WhitelistTable.ForwardingRecord(true, "Player"), table.getForwardingRecord(11L));
+        table.deletePlayerForGroupLeave(11L);
+        assertFalse(table.isRecorded(player));
+        assertFalse(table.getForwardingRecord(11L).bound());
+        assertEquals(0, number("SELECT COUNT(*) FROM user_binding"));
+        table.createRecord(UUID.randomUUID(), "Next", "NEXT11");
+        assertTrue(table.setBind("NEXT11", 11L));
+    }
+
+    @Test
+    void groupLeaveDeleteFailureRollsBackThePlayerAndBindingClaim() throws Exception {
+        WhitelistTable table = new WhitelistTable();
+        UUID player = UUID.randomUUID();
+        table.createRecord(player, "Player", "CODE11");
+        assertTrue(table.setBind("CODE11", 11L));
+        execute("CREATE TRIGGER reject_group_leave BEFORE DELETE ON user_binding BEGIN "
+                + "SELECT RAISE(ABORT, '模拟数据库删除失败'); END");
+        assertThrows(SQLException.class, () -> table.deletePlayerForGroupLeave(11L));
+        assertTrue(table.isBind(player));
+        assertEquals(player, table.getUserUUID(11L));
+        assertEquals(1, number("SELECT COUNT(*) FROM user_binding WHERE user_id = 11"));
+    }
+
     private List<Boolean> runTogether(List<Callable<Boolean>> requests) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(requests.size());
         CyclicBarrier barrier = new CyclicBarrier(requests.size());

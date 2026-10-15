@@ -1,8 +1,6 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.DeerlingBot;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,12 +34,14 @@ public class TemplateFactory implements AutoCloseable {
         return this;
     }
 
-    public File build(OfflinePlayer player) {
+    public String content() {
         ensureOpen();
-        String content = indexFileContent;
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            content = PlaceHolderApiManager.setPlaceholders(player, content);
-        }
+        return indexFileContent;
+    }
+
+    /** 仅写入已在玩家所属线程解析完毕的 HTML，不再访问 Bukkit 或 PAPI。 */
+    public File build(String content) {
+        ensureOpen();
         return writeTemplate(content);
     }
 

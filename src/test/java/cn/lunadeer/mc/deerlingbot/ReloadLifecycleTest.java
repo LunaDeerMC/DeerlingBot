@@ -47,6 +47,10 @@ class ReloadLifecycleTest {
              var notificationInstances = mockConstruction(Notification.class);
              var logInstances = mockConstruction(XLogger.class);
              var databases = mockConstruction(DatabaseManager.class);
+             var queueAccess = mockStatic(EventIoService.class);
+             var eventQueues = mockConstruction(EventIoService.class, (queue, context) ->
+                     queueAccess.when(EventIoService::getInstance).thenReturn(queue));
+             var snapshots = mockConstruction(PlayerSnapshotService.class);
              var tables = mockConstruction(WhitelistTable.class);
              var commands = mockConstruction(CommandManager.class);
              var drivers = mockConstruction(WebDriverManager.class);
@@ -67,6 +71,10 @@ class ReloadLifecycleTest {
             assertTrue(plugin.reloadConfiguration());
             assertEquals("localhost", Configuration.database.host);
             assertEquals(1, databases.constructed().size());
+            assertEquals(1, eventQueues.constructed().size());
+            assertEquals(1, snapshots.constructed().size());
+            verify(eventQueues.constructed().get(0), never()).close();
+            verify(snapshots.constructed().get(0), never()).close();
             assertEquals(1, commands.constructed().size());
             verify(commands.constructed().get(0), times(2)).reloadCommands();
             verify(plugins, times(1)).registerEvents(any(JoinLeaveEvents.class), eq(plugin));
@@ -80,6 +88,11 @@ class ReloadLifecycleTest {
             // 一项关闭失败不能阻止数据库和其他资源清理。
             doThrow(new IllegalStateException("test close failure")).when(drivers.constructed().get(2)).close();
             plugin.onDisable();
+            var shutdownOrder = inOrder(eventQueues.constructed().get(0),
+                    snapshots.constructed().get(0), databases.constructed().get(0));
+            shutdownOrder.verify(eventQueues.constructed().get(0)).close();
+            shutdownOrder.verify(snapshots.constructed().get(0)).close();
+            shutdownOrder.verify(databases.constructed().get(0)).close();
             verify(databases.constructed().get(0)).close();
             verify(reviews.constructed().get(0)).close();
             scheduler.verify(Scheduler::cancelAll);

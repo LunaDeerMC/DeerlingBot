@@ -1,6 +1,6 @@
 package cn.lunadeer.mc.deerlingbot.commands;
 
-import cn.lunadeer.mc.deerlingbot.DeerlingBot;
+import cn.lunadeer.mc.deerlingbot.managers.PlayerSnapshotService;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
@@ -11,9 +11,6 @@ import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.entity.Player;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -37,11 +34,7 @@ public class SimpleInfo extends BotCommand {
         try {
             uuid = WhitelistTable.getInstance().getUserUUID(userId);
             lastKnownName = WhitelistTable.getInstance().getLastKnownName(uuid);
-            Player player = DeerlingBot.getInstance().getServer().getOnlinePlayers().stream()
-                    .filter(p -> p.getUniqueId().equals(uuid))
-                    .findFirst()
-                    .orElse(null);
-            if (player == null) {
+            if (!PlayerSnapshotService.getInstance().isOnline(uuid)) {
                 status = "【上次在线】 " + WhitelistTable.getInstance().getLastJoinAt(uuid);
             } else {
                 status = "【当前在线】";
@@ -57,8 +50,6 @@ public class SimpleInfo extends BotCommand {
         } catch (Exception e) {
             XLogger.error("Failed to fetch image for UUID: " + uuid, e);
         }
-
-        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
 
         long messageID = messageEvent.getMessageId();
         List<MessageSegment> playerInfos = new ArrayList<>();

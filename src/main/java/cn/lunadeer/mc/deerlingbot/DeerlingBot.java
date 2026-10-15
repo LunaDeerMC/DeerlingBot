@@ -26,6 +26,8 @@ public final class DeerlingBot extends JavaPlugin {
     private WebDriverManager webDriver;
     private PlaceHolderApiManager placeholders;
     private JoinLeaveEvents joinLeaveEvents;
+    private EventIoService eventIo;
+    private PlayerSnapshotService playerSnapshots;
 
     private record DatabaseSettings(String type, String host, String port, String name, String user, String password) {
         static DatabaseSettings current() {
@@ -72,6 +74,8 @@ public final class DeerlingBot extends JavaPlugin {
         new BukkitCommand(this);
         try {
             configureDatabase();
+            eventIo = new EventIoService(this);
+            playerSnapshots = new PlayerSnapshotService(this);
             botCommands = new CommandManager(this);
             new BindManager(this);
             new MessageManager(this);
@@ -144,7 +148,10 @@ public final class DeerlingBot extends JavaPlugin {
     public void onDisable() {
         // 每项清理独立执行，部分初始化失败也能安全关闭其余资源。
         if (connector != null) closeResource(connector::close);
+        // 先停止接收新任务并排空退群写入，再关闭数据库和调度器。
+        if (eventIo != null) closeResource(eventIo::close);
         if (joinLeaveEvents != null) closeResource(joinLeaveEvents::close);
+        if (playerSnapshots != null) closeResource(playerSnapshots::close);
         closeResource(() -> HandlerList.unregisterAll(this));
         closeResource(Scheduler::cancelAll);
         if (webDriver != null) closeResource(webDriver::close);
@@ -159,6 +166,8 @@ public final class DeerlingBot extends JavaPlugin {
         closeResource(cn.lunadeer.mc.deerlingbot.utils.command.CommandManager::close);
         closeResource(Notification::close);
         joinLeaveEvents = null;
+        eventIo = null;
+        playerSnapshots = null;
         connector = null;
         webDriver = null;
         placeholders = null;

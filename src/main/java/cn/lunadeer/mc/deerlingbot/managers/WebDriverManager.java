@@ -143,7 +143,7 @@ public class WebDriverManager implements AutoCloseable {
         }
     }
 
-    private synchronized boolean isClosed() {
+    public synchronized boolean isClosed() {
         return closed;
     }
 

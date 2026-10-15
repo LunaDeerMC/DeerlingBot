@@ -2,6 +2,7 @@ package cn.lunadeer.mc.deerlingbot.commands;
 
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
+import cn.lunadeer.mc.deerlingbot.managers.EventIoService;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.GroupMessage;
@@ -11,7 +12,6 @@ import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
-import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 
 
 /**
@@ -60,7 +60,7 @@ public abstract class BotCommand {
     }
 
     public void runAsync(Message messageEvent, String... args) {
-        Scheduler.runTaskAsync(() -> run(messageEvent, args));
+        EventIoService.getInstance().submitCommand(messageEvent.getUserId(), () -> run(messageEvent, args));
     }
 
     private void run(Message messageEvent, String... args) {
@@ -96,7 +96,8 @@ public abstract class BotCommand {
 
         // bind required
         try {
-            if (bindRequired && !WhitelistTable.getInstance().isBind(userID)) {
+            WhitelistTable table = WhitelistTable.getInstance();
+            if (bindRequired && !table.isBind(userID)) {
                 if (groupID != null) {
                     GroupOperation.SendGroupMessage(groupID,
                             new ReplySegment(messageID),
@@ -110,7 +111,7 @@ public abstract class BotCommand {
             }
             if (bindRequired && Configuration.syncCardName && messageEvent instanceof GroupMessage groupMessageEvent) {
                 String cardName = groupMessageEvent.getSender().getCard();
-                String playerName = WhitelistTable.getInstance().getLastKnownName(userID);
+                String playerName = table.getLastKnownName(userID);
                 if (!cardName.equals(playerName)) {
                     GroupOperation.SetGroupCard(groupID, userID, playerName);
                 }
@@ -121,7 +122,7 @@ public abstract class BotCommand {
             return;
         }
 
-        handle(messageEvent, args);
+        if (EventIoService.canSendFromCurrentTask()) handle(messageEvent, args);
     }
 
     public abstract void handle(Message messageEvent, String... args);

@@ -130,6 +130,7 @@ public class CoreConnector {
     };
 
     public void send(JSONObject message) {
+        if (!EventIoService.canSendFromCurrentTask()) return;
         if (webSocketInstance != null) {
             XLogger.debug("发送消息: {0}", message.toJSONString());
             webSocketInstance.sendText(message.toJSONString());

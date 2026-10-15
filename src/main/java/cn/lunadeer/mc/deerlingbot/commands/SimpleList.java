@@ -1,6 +1,6 @@
 package cn.lunadeer.mc.deerlingbot.commands;
 
-import cn.lunadeer.mc.deerlingbot.DeerlingBot;
+import cn.lunadeer.mc.deerlingbot.managers.PlayerSnapshotService;
 import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
 import cn.lunadeer.mc.deerlingbot.protocols.GroupOperation;
 import cn.lunadeer.mc.deerlingbot.protocols.PrivateOperation;
@@ -9,9 +9,8 @@ import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.ReplySegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.ConfigurationPart;
-import org.bukkit.entity.Player;
 
-import java.util.Collection;
+import java.util.List;
 
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.formatString;
 
@@ -27,10 +26,10 @@ public class SimpleList extends BotCommand {
 
     @Override
     public void handle(Message messageEvent, String... args) {
-        Collection<? extends Player> players = DeerlingBot.getInstance().getServer().getOnlinePlayers();
+        List<PlayerSnapshotService.OnlinePlayer> players = PlayerSnapshotService.getInstance().onlinePlayers();
         StringBuilder playerList = new StringBuilder(formatString(MessageText.listPlayerText.listPlayer, players.size()));
-        for (Player player : players) {
-            playerList.append(player.getName()).append("\n");
+        for (var player : players) {
+            playerList.append(player.name()).append("\n");
         }
         long messageID = messageEvent.getMessageId();
         if (messageEvent instanceof GroupMessage groupMessage) {

@@ -33,6 +33,8 @@ public class UnbindPlayer extends BotCommand {
         Long groupID = messageEvent instanceof GroupMessage groupMessage ? groupMessage.getGroupID() : null;
         long userID = messageEvent.getUserId();
         long messageID = messageEvent.getMessageId();
+        BindManager bindManager = BindManager.getInstance();
+        WhitelistTable table = WhitelistTable.getInstance();
 
         if (args.length != 0) {
             reply(groupID, userID, messageID,
@@ -41,7 +43,7 @@ public class UnbindPlayer extends BotCommand {
         }
 
         try {
-            if (!WhitelistTable.getInstance().isBind(userID)) {
+            if (!table.isBind(userID)) {
                 reply(groupID, userID, messageID, MessageText.unbindPlayerText.notBind);
                 return;
             }
@@ -51,7 +53,7 @@ public class UnbindPlayer extends BotCommand {
             return;
         }
 
-        if (BindManager.getInstance().unbind(userID)) {
+        if (bindManager.unbind(userID, table)) {
             reply(groupID, userID, messageID, MessageText.unbindPlayerText.unbindSuccess);
         } else {
             reply(groupID, userID, messageID, MessageText.unbindPlayerText.unbindFailed);

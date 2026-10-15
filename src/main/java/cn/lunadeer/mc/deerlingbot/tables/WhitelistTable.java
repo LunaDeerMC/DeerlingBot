@@ -2,12 +2,16 @@ package cn.lunadeer.mc.deerlingbot.tables;
 
 import cn.lunadeer.mc.deerlingbot.utils.databse.FIelds.*;
 import cn.lunadeer.mc.deerlingbot.utils.databse.DatabaseManager;
+import cn.lunadeer.mc.deerlingbot.utils.databse.EventQueryTimeout;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Select;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Table.Column;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Table.Create;
 import cn.lunadeer.mc.deerlingbot.utils.databse.syntax.Update;
 
 import java.sql.SQLException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +25,7 @@ public class WhitelistTable {
 
     private static volatile WhitelistTable instance;
     private final BindingStore bindings;
+    private final DatabaseManager database;
 
     public WhitelistTable() throws SQLException {
         this(() -> generateCode());
@@ -43,7 +48,8 @@ public class WhitelistTable {
                 .column(user_record_bind)
                 .column(user_record_code)
                 .execute();
-        bindings = new BindingStore(DatabaseManager.instance, codeGenerator);
+        database = DatabaseManager.instance;
+        bindings = new BindingStore(database, codeGenerator);
         bindings.initialize();
         instance = this;
     }
@@ -197,5 +203,28 @@ public class WhitelistTable {
 
     public void deletePlayer(long userId) throws Exception {
         bindings.deletePlayer(userId);
+    }
+
+    public record ForwardingRecord(boolean bound, String name) { }
+
+    /** 一次读取转发所需信息，并限定群事件查询的执行时间。 */
+    public ForwardingRecord getForwardingRecord(long userId) throws SQLException {
+        try (Connection connection = database.getConnection()) {
+            EventQueryTimeout.configure(connection);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT bind, last_known_name FROM user_record WHERE user_id = ?")) {
+                statement.setQueryTimeout(EventQueryTimeout.SECONDS);
+                statement.setLong(1, userId);
+                try (ResultSet rows = statement.executeQuery()) {
+                    return rows.next() ? new ForwardingRecord(rows.getBoolean(1), rows.getString(2))
+                            : new ForwardingRecord(false, null);
+                }
+            }
+        }
+    }
+
+    /** 退群写入使用捕获的原连接池，停用后的旧任务不会转向新库。 */
+    public void deletePlayerForGroupLeave(long userId) throws SQLException {
+        bindings.deletePlayerForGroupLeave(userId);
     }
 }

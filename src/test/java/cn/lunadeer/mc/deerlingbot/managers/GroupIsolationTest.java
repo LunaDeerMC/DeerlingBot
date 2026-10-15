@@ -7,29 +7,39 @@ import cn.lunadeer.mc.deerlingbot.protocols.events.notice.GroupDecrease;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.MessageSegment;
 import cn.lunadeer.mc.deerlingbot.protocols.segments.TextSegment;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
-import cn.lunadeer.mc.deerlingbot.utils.XLogger;
+import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.Server;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
+import java.util.function.BooleanSupplier;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class GroupIsolationTest {
     private JavaPlugin plugin;
-    private Server server;
+    private EventIoService io;
+    private final List<Runnable> tasks = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
         plugin = mock(JavaPlugin.class);
-        server = mock(Server.class);
+        Server server = mock(Server.class);
         when(plugin.getServer()).thenReturn(server);
+        when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
         when(server.getPluginManager()).thenReturn(mock(PluginManager.class));
+        io = mock(EventIoService.class);
+        when(io.isOpen()).thenReturn(true);
+        when(io.submitMessage(anyLong(), any())).thenAnswer(call -> tasks.add(call.getArgument(1)));
+        when(io.submitDeletion(anyLong(), any())).thenAnswer(call -> tasks.add(call.getArgument(1)));
         Configuration.groupList = List.of("100", "101");
         Configuration.messageTransfer = new Configuration.MessageTransfer();
         Configuration.messageTransfer.enable = true;
@@ -38,47 +48,74 @@ class GroupIsolationTest {
     }
 
     @Test
-    void leavingUnrelatedGroupDoesNotRemoveBinding() throws Exception {
+    void leavingUnrelatedGroupDoesNotRemoveBindingAndManagedDeletionIsDeferred() throws Exception {
         WhitelistTable table = mock(WhitelistTable.class);
-        try (MockedStatic<WhitelistTable> tables = mockStatic(WhitelistTable.class)) {
+        try (var tables = mockStatic(WhitelistTable.class)) {
             tables.when(WhitelistTable::getInstance).thenReturn(table);
-            BindManager manager = new BindManager(plugin);
+            BindManager manager = new BindManager(plugin, io);
             manager.onQuitGroup(new GroupDecrease(0, 1, 200, 42, GroupDecrease.SubType.leave, 42));
-            verifyNoInteractions(table);
+            assertTrue(tasks.isEmpty());
             manager.onQuitGroup(new GroupDecrease(0, 1, 101, 42, GroupDecrease.SubType.leave, 42));
-            verify(table).deletePlayer(42);
+            verifyNoInteractions(table);
+            assertEquals(1, tasks.size());
+            // 即使全局实例更换，已入队写入仍使用原表。
+            tables.when(WhitelistTable::getInstance).thenReturn(mock(WhitelistTable.class));
+            tasks.get(0).run();
+            verify(table).deletePlayerForGroupLeave(42);
         }
     }
 
     @Test
-    void unrelatedGroupsCannotBroadcastOrReceiveBindingReplies() {
-        try (MockedStatic<GroupOperation> groups = mockStatic(GroupOperation.class);
-             MockedStatic<WhitelistTable> tables = mockStatic(WhitelistTable.class);
-             MockedStatic<XLogger> logs = mockStatic(XLogger.class)) {
-            MessageManager manager = new MessageManager(plugin);
+    void unrelatedGroupsCannotEnqueueQueriesOrBroadcast() {
+        try (var groups = mockStatic(GroupOperation.class); var tables = mockStatic(WhitelistTable.class);
+             var scheduler = mockStatic(Scheduler.class)) {
+            MessageManager manager = new MessageManager(plugin, io);
             manager.handleGroupMessageToServer(message(200));
             Configuration.messageTransfer.bindRequired = false;
             manager.handleGroupMessageToServer(message(101));
-            verify(server, never()).broadcastMessage(anyString());
+            assertTrue(tasks.isEmpty());
             groups.verifyNoInteractions();
             tables.verifyNoInteractions();
+            scheduler.verifyNoInteractions();
         }
     }
 
     @Test
-    void configuredGroupRetainsBindingCheckAndForwarding() throws Exception {
+    void configuredGroupQueriesInBackgroundAndUsesSafeBroadcastScheduler() throws Exception {
         WhitelistTable table = mock(WhitelistTable.class);
-        try (MockedStatic<GroupOperation> groups = mockStatic(GroupOperation.class);
-             MockedStatic<WhitelistTable> tables = mockStatic(WhitelistTable.class);
-             MockedStatic<XLogger> logs = mockStatic(XLogger.class)) {
+        when(table.getForwardingRecord(42)).thenReturn(new WhitelistTable.ForwardingRecord(false, null));
+        try (var groups = mockStatic(GroupOperation.class); var tables = mockStatic(WhitelistTable.class);
+             var scheduler = mockStatic(Scheduler.class)) {
             tables.when(WhitelistTable::getInstance).thenReturn(table);
-            MessageManager manager = new MessageManager(plugin);
+            scheduler.when(() -> Scheduler.broadcastMessage(anyString(), any(BooleanSupplier.class))).thenReturn(CompletableFuture.completedFuture(null));
+            MessageManager manager = new MessageManager(plugin, io);
             manager.handleGroupMessageToServer(message(100));
-            verify(server, never()).broadcastMessage(anyString());
+            verifyNoInteractions(table);
+            groups.verifyNoInteractions();
+            tasks.remove(0).run();
             groups.verify(() -> GroupOperation.SendGroupMessage(eq(100L), any(MessageSegment[].class)));
-            when(table.isBind(42L)).thenReturn(true);
+            scheduler.verifyNoInteractions();
+            when(table.getForwardingRecord(42)).thenReturn(new WhitelistTable.ForwardingRecord(true, "Player"));
             manager.handleGroupMessageToServer(message(100));
-            verify(server).broadcastMessage("[群消息]<玩家> hello");
+            tasks.remove(0).run();
+            scheduler.verify(() -> Scheduler.broadcastMessage(eq("[群消息]<玩家> hello"), any(BooleanSupplier.class)));
+        }
+    }
+
+    @Test
+    void lateDatabaseResultDoesNotBroadcastAfterShutdown() throws Exception {
+        WhitelistTable table = mock(WhitelistTable.class);
+        when(table.getForwardingRecord(42)).thenAnswer(call -> {
+            when(io.isOpen()).thenReturn(false);
+            return new WhitelistTable.ForwardingRecord(true, "Player");
+        });
+        try (var groups = mockStatic(GroupOperation.class); var tables = mockStatic(WhitelistTable.class);
+             var scheduler = mockStatic(Scheduler.class)) {
+            tables.when(WhitelistTable::getInstance).thenReturn(table);
+            new MessageManager(plugin, io).handleGroupMessageToServer(message(100));
+            tasks.get(0).run();
+            groups.verifyNoInteractions();
+            scheduler.verifyNoInteractions();
         }
     }
 
