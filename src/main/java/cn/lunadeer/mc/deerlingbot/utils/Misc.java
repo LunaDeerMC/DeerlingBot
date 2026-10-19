@@ -131,6 +131,10 @@ public class Misc {
     }
 
     public static String decimalConverter(int num) {
+        return decimalConverter((long) num);
+    }
+
+    public static String decimalConverter(long num) {
         if (num < 1000) {
             return String.valueOf(num);
         } else if (num < 1000000) {

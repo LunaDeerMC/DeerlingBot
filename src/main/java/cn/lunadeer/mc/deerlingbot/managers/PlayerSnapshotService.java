@@ -15,6 +15,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,6 +48,7 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
     private final Map<UUID, StatisticsSnapshot> statistics = new LinkedHashMap<>();
     private final Set<CompletableFuture<?>> pending = ConcurrentHashMap.newKeySet();
     private final Path cacheFile;
+    private final Path statisticsDirectory;
     private final ThreadPoolExecutor cacheWriter;
     private final CompletableFuture<Void> cacheLoaded = new CompletableFuture<>();
     private volatile boolean closed;
@@ -63,6 +65,9 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
     PlayerSnapshotService(JavaPlugin plugin, boolean folia) {
         this.folia = folia;
         this.cacheFile = plugin.getDataFolder().toPath().resolve("player-statistics-cache.json");
+        // 原版玩家统计统一保存在主世界，不能累加下界、末地或其他世界的副本。
+        var worlds = plugin.getServer().getWorlds();
+        this.statisticsDirectory = worlds.isEmpty() ? null : worlds.get(0).getWorldFolder().toPath().resolve("stats");
         // 只保留最新一次待写入任务，避免频繁上下线积累磁盘任务。
         cacheWriter = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1), task -> {
             Thread thread = new Thread(task, "DeerlingBot-statistics-cache");
@@ -155,8 +160,21 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
 
     private CompletableFuture<InfoSnapshot> captureOffline(UUID uuid, String name, String lastJoin, String template) {
         if (folia) {
-            // Folia 离线对象可能在调用中转为在线对象，因此只使用已采集的纯数据。
-            return cacheLoaded.thenApply(ignored -> {
+            // 文件 IO 留在后台；即使查询途中玩家上线，也不访问跨区域的玩家对象。
+            return Scheduler.callTaskAsync(() -> {
+                if (closed) throw new CancellationException("玩家快照服务已关闭");
+                try {
+                    WorldStatisticsReader.Statistics saved = WorldStatisticsReader.read(statisticsDirectory, uuid);
+                    if (closed) throw new CancellationException("玩家快照服务已关闭");
+                    if (saved != null) {
+                        return new InfoSnapshot(false, fillTemplate(template, uuid, name, lastJoin, false,
+                                new StatisticsSnapshot(saved.playedTicks(), saved.walkedCentimeters()),
+                                decimalConverter(saved.minedBlocks()), decimalConverter(saved.craftedItems()), null));
+                    }
+                } catch (IOException e) {
+                    XLogger.warn("读取玩家 {0} 的存档统计失败，尝试使用缓存: {1}", uuid, e.getMessage());
+                }
+                cacheLoaded.join();
                 if (closed) throw new CancellationException("玩家快照服务已关闭");
                 StatisticsSnapshot snapshot;
                 synchronized (statistics) {
