@@ -103,6 +103,31 @@ class PlayerSnapshotServiceTest {
     }
 
     @Test
+    void foliaOfflineInfoReadsActualDeerFoliaPlayersStatsLayout() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        Path mainWorld = directory.resolve("world");
+        Path stats = mainWorld.resolve("players").resolve("stats");
+        Files.createDirectories(stats);
+        Files.writeString(stats.resolve(uuid + ".json"),
+                "{\"stats\":{\"minecraft:custom\":{\"minecraft:play_time\":2400,\"minecraft:walk_one_cm\":500},\"minecraft:mined\":{\"minecraft:stone\":42},\"minecraft:crafted\":{\"minecraft:stick\":7}}}");
+        JavaPlugin plugin = plugin();
+        World world = mock(World.class);
+        when(world.getWorldFolder()).thenReturn(mainWorld.toFile());
+        when(plugin.getServer().getWorlds()).thenReturn(List.of(world));
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
+             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class)) {
+            directGlobalTasks(scheduler, new AtomicBoolean());
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
+                var snapshot = service.captureInfo(uuid, "Alex", "yesterday",
+                        "{{time}} {{walk}} {{break}} {{craft}}").get(5, TimeUnit.SECONDS);
+                assertFalse(snapshot.online());
+                assertEquals("2分钟 5.00 m 42 7", snapshot.html());
+                papi.verifyNoInteractions();
+            }
+        }
+    }
+
+    @Test
     void onlineStatisticsAndCustomTemplatePapiRunOnEntityScheduler() throws Exception {
         UUID uuid = UUID.randomUUID();
         Player player = mock(Player.class);

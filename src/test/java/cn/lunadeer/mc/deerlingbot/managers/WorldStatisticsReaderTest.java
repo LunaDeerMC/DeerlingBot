@@ -19,6 +19,25 @@ class WorldStatisticsReaderTest {
     }
 
     @Test
+    void resolvesDeerFoliaPlayersStatsAndPrefersNormalWorldStats() throws Exception {
+        Path world = directory.resolve("world");
+        Path deerFoliaStats = world.resolve("players").resolve("stats");
+        Files.createDirectories(deerFoliaStats);
+        Files.writeString(deerFoliaStats.resolve(uuid + ".json"),
+                "{\"stats\":{\"minecraft:custom\":{\"minecraft:play_time\":2400},\"minecraft:mined\":{\"minecraft:stone\":42},\"minecraft:crafted\":{\"minecraft:stick\":7}}}");
+        assertEquals(new WorldStatisticsReader.Statistics(2400, 0, 42, 7),
+                WorldStatisticsReader.readFromWorld(world, uuid));
+
+        Path normalStats = world.resolve("stats");
+        Files.createDirectories(normalStats);
+        Files.writeString(normalStats.resolve(uuid + ".json"),
+                "{\"stats\":{\"minecraft:custom\":{\"minecraft:play_time\":1200}}}");
+        assertEquals(new WorldStatisticsReader.Statistics(1200, 0, 0, 0),
+                WorldStatisticsReader.readFromWorld(world, uuid));
+        assertNull(WorldStatisticsReader.readFromWorld(world, UUID.randomUUID()));
+    }
+
+    @Test
     void readsModernStatisticsAndSumsAllBlockAndItemTypesWithoutIntegerOverflow() throws Exception {
         write("""
                 {"stats": {

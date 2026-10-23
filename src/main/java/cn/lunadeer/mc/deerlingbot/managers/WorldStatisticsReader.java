@@ -15,6 +15,17 @@ final class WorldStatisticsReader {
 
     record Statistics(int playedTicks, int walkedCentimeters, long minedBlocks, long craftedItems) { }
 
+    /**
+     * Paper / vanilla saves statistics in world/stats; DeerFoliaPlus also supports
+     * world/players/stats. Prefer the normal path when a player's file exists
+     * there, then try the alternative before falling back to the plugin cache.
+     */
+    static Statistics readFromWorld(Path worldDirectory, UUID uuid) throws IOException {
+        if (worldDirectory == null) return null;
+        Statistics normal = read(worldDirectory.resolve("stats"), uuid);
+        return normal != null ? normal : read(worldDirectory.resolve("players").resolve("stats"), uuid);
+    }
+
     static Statistics read(Path directory, UUID uuid) throws IOException {
         if (directory == null) return null;
         Path file = directory.resolve(uuid + ".json");
