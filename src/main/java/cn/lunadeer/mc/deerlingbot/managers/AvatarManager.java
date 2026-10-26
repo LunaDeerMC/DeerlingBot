@@ -41,7 +41,10 @@ public final class AvatarManager implements AutoCloseable {
         }
     }
 
-    private record CachedAvatar(BufferedImage image, long expiresAt) {}
+    private record CachedAvatar(BufferedImage image, long expiresAt, long staleUntil) {}
+
+    // Keep the last successful skin briefly as a fallback for transient CDN failures.
+    private static final long STALE_AVATAR_NANOS = Duration.ofHours(12).toNanos();
 
     private final Limits limits;
     private final Function<UUID, URI> endpoint;
@@ -56,7 +59,7 @@ public final class AvatarManager implements AutoCloseable {
 
     public AvatarManager() {
         this(uuid -> URI.create("https://api.mineatar.io/face/" + uuid + "?scale=12"),
-                new Limits(1000, 1000, 3000, 512 * 1024, 256, 2, 16, 128, Duration.ofMinutes(10)),
+                new Limits(2500, 2500, 6000, 512 * 1024, 256, 2, 16, 128, Duration.ofMinutes(10)),
                 System::nanoTime, XLogger::warn);
         instance = this;
     }
@@ -96,9 +99,9 @@ public final class AvatarManager implements AutoCloseable {
     public synchronized CompletableFuture<BufferedImage> fetch(UUID uuid) {
         if (closed) return CompletableFuture.failedFuture(new CancellationException("头像下载器已关闭"));
         long now = clock.getAsLong();
-        cache.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
+        cache.entrySet().removeIf(entry -> entry.getValue().staleUntil() <= now);
         CachedAvatar cached = cache.get(uuid);
-        if (cached != null) return CompletableFuture.completedFuture(cached.image());
+        if (cached != null && cached.expiresAt() > now) return CompletableFuture.completedFuture(cached.image());
         Request previous = pending.get(uuid);
         if (previous != null) return previous.result.thenApply(image -> image);
 
@@ -125,7 +128,8 @@ public final class AvatarManager implements AutoCloseable {
             HttpRequest httpRequest = HttpRequest.newBuilder(endpoint.apply(request.uuid))
                     .timeout(Duration.ofMillis(limits.totalMillis()))
                     .header("Accept", "image/*").GET().build();
-            armReadTimeout(request);
+            // Response headers/HTTPS handshake are covered by the total request deadline.
+            // Only start the read-idle timer once the response body has subscribed.
             CompletableFuture<HttpResponse<byte[]>> response = http.sendAsync(httpRequest, info -> {
                 if (info.statusCode() != 200) throw new CompletionException(new IOException("HTTP " + info.statusCode()));
                 if (info.headers().firstValueAsLong("Content-Length").orElse(0L) > limits.maxBytes()) {
@@ -193,18 +197,27 @@ public final class AvatarManager implements AutoCloseable {
             pending.remove(request.uuid);
             request.stopped = true;
             if (image != null && !closed) {
-                cache.put(request.uuid, new CachedAvatar(image, clock.getAsLong() + limits.cacheTtl().toNanos()));
+                long now = clock.getAsLong();
+                cache.put(request.uuid, new CachedAvatar(image, now + limits.cacheTtl().toNanos(),
+                        now + limits.cacheTtl().toNanos() + STALE_AVATAR_NANOS));
                 while (cache.size() > limits.cacheCapacity()) cache.remove(cache.keySet().iterator().next());
             }
         }
-        // 取消 HTTP 交换可能同步触发响应回调，不能持有管理器锁等待它完成。
-        release(request, image == null);
+        // Cancel the failed HTTP exchange even if an old cached avatar is available.
+        // Cancellation can invoke response callbacks synchronously, outside the lock.
+        boolean failed = image == null;
+        release(request, failed);
         if (closed) {
             request.result.cancel(false);
             return;
         }
-        if (image == null) {
-            warning.accept("玩家 " + request.uuid + " 的头像获取失败，改用文字回复：" + failure);
+        if (failed) {
+            synchronized (this) {
+                CachedAvatar previous = cache.get(request.uuid);
+                if (previous != null && previous.staleUntil() > clock.getAsLong()) image = previous.image();
+            }
+            warning.accept("玩家 " + request.uuid + " 的头像获取失败，"
+                    + (image != null ? "沿用缓存的真实头像：" : "显示头像不可用占位图：") + failure);
         }
         request.result.complete(image);
     }

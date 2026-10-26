@@ -230,37 +230,18 @@ public final class InfoCardRenderer {
             a.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             a.drawImage(actual, x, y, size, size, null);
         } else {
-            // Placeholder made from an explicit pixel grid; no network or real player skin.
-            String[] sprite = {
-                "HHHHHHHHHHHH",
-                "HHHHHHHHHHHH",
-                "HHHHHHHHHHHH",
-                "HHSSSSSSSSHH",
-                "HSSSSSSSSSSH",
-                "SSSSSSSSSSSS",
-                "SSWWSSSSWWSS",
-                "SSEESSSSEESS",
-                "SSSSSRRSSSSS",
-                "SSSSSRRSSSSS",
-                "SSSSMMMMSSSS",
-                "HSSSSSSSSSSH"
-            };
-            java.util.Map<Character, Color> palette = java.util.Map.of(
-                'H', c("#533A32"), 'S', c("#DFA780"),
-                'W', c("#FFF8EA"), 'E', c("#426B8C"),
-                'R', c("#BF8669"), 'M', c("#875747"));
-            a.setColor(c("#E7BCA8"));
+            // Explicit unavailable state, rather than a made-up face that resembles
+            // a player's actual Minecraft skin.
+            a.setColor(c("#F3F1F6"));
             a.fillRect(x, y, size, size);
-            for (int ry = 0; ry < sprite.length; ry++) {
-                for (int rx = 0; rx < sprite[ry].length(); rx++) {
-                    a.setColor(palette.get(sprite[ry].charAt(rx)));
-                    int px1 = x + rx * size / 12;
-                    int px2 = x + (rx + 1) * size / 12;
-                    int py1 = y + ry * size / 12;
-                    int py2 = y + (ry + 1) * size / 12;
-                    a.fillRect(px1, py1, px2 - px1, py2 - py1);
-                }
-            }
+            a.setColor(c("#C7C3CF"));
+            float head = size * 0.27f;
+            a.fill(new Ellipse2D.Float(x + (size - head) / 2f, y + size * 0.20f, head, head));
+            a.fill(new RoundRectangle2D.Float(x + size * 0.24f, y + size * 0.51f,
+                    size * 0.52f, size * 0.27f, size * 0.20f, size * 0.20f));
+            a.setColor(c("#767383"));
+            a.setFont(font(CJK, Font.PLAIN, 10));
+            center(a, "暂不可用", x + size / 2f, y + size - 12f);
         }
         a.dispose();
     }

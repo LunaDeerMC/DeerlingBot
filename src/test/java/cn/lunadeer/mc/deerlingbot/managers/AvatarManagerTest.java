@@ -85,6 +85,25 @@ class AvatarManagerTest {
     }
 
     @Test
+    void preservesLastRealAvatarForTemporaryNetworkFailuresAfterTtl() throws Exception {
+        createManager();
+        UUID uuid = UUID.randomUUID();
+        BufferedImage initial = manager.fetch(uuid).get(3, TimeUnit.SECONDS);
+        assertNotNull(initial);
+
+        clock.set(Duration.ofSeconds(11).toNanos());
+        handler = exchange -> respond(exchange, 503, new byte[0]);
+        assertSame(initial, manager.fetch(uuid).get(3, TimeUnit.SECONDS));
+        assertEquals(2, hits.get());
+        assertTrue(warnings.get(0).contains("沿用缓存的真实头像"));
+
+        clock.set(Duration.ofHours(13).toNanos());
+        assertNull(manager.fetch(uuid).get(3, TimeUnit.SECONDS));
+        assertEquals(3, hits.get());
+        assertTrue(warnings.get(1).contains("头像不可用占位图"));
+    }
+
+    @Test
     void evictsLeastRecentlyUsedAvatarWhenCacheIsFull() throws Exception {
         createManager();
         UUID first = UUID.randomUUID();
@@ -161,6 +180,22 @@ class AvatarManagerTest {
     }
 
     @Test
+    void slowHeadersBeforeBodyDoNotTripTheReadIdleTimeout() throws Exception {
+        handler = exchange -> {
+            try {
+                Thread.sleep(450); // Bigger than read-idle timeout, below total deadline.
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+            }
+            respond(exchange, 200, png);
+        };
+        createManager(150, 2200, 2, 2);
+        assertNotNull(manager.fetch(UUID.randomUUID()).get(3, TimeUnit.SECONDS));
+        assertTrue(warnings.isEmpty(), "Read-idle timer must only start after headers arrive");
+    }
+
+    @Test
     void slowHeadersTimeOutAndReleaseWorkerForTheNextRequest() throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -171,11 +206,11 @@ class AvatarManagerTest {
             }
             respond(exchange, 200, png);
         };
-        createManager(350, 2000, 2, 2);
+        createManager(350, 900, 2, 2);
         CompletableFuture<BufferedImage> slow = manager.fetch(new UUID(0, 1));
         assertTrue(entered.await(2, TimeUnit.SECONDS));
         assertNull(slow.get(1500, TimeUnit.MILLISECONDS));
-        assertTrue(warnings.get(0).contains("响应超时"));
+        assertTrue(warnings.get(0).contains("总耗时"));
         assertNotNull(manager.fetch(new UUID(0, 2)).get(2, TimeUnit.SECONDS));
         release.countDown();
     }
