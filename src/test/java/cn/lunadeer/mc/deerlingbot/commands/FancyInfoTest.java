@@ -1,7 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.commands;
 
 import cn.lunadeer.mc.deerlingbot.managers.CoreConnector;
-import cn.lunadeer.mc.deerlingbot.managers.WebDriverManager;
+import cn.lunadeer.mc.deerlingbot.managers.InfoImageService;
 import cn.lunadeer.mc.deerlingbot.protocols.events.message.Message;
 import cn.lunadeer.mc.deerlingbot.utils.Misc;
 import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
@@ -21,7 +21,7 @@ import static org.mockito.Mockito.*;
 class FancyInfoTest {
     @Test
     void alreadyCompletedCacheFutureStillDefersEncodingAndSending() {
-        WebDriverManager manager = mock(WebDriverManager.class);
+        InfoImageService manager = mock(InfoImageService.class);
         CoreConnector connector = mock(CoreConnector.class);
         Message event = mock(Message.class);
         BufferedImage cached = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
@@ -53,7 +53,7 @@ class FancyInfoTest {
 
     @Test
     void closingCapturedManagerDiscardsAQueuedCachedReply() {
-        WebDriverManager manager = mock(WebDriverManager.class);
+        InfoImageService manager = mock(InfoImageService.class);
         Message event = mock(Message.class);
         AtomicReference<Supplier<?>> queued = new AtomicReference<>();
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
@@ -74,7 +74,7 @@ class FancyInfoTest {
 
     @Test
     void closeDuringEncodingDiscardsThePreparedReply() {
-        WebDriverManager manager = mock(WebDriverManager.class);
+        InfoImageService manager = mock(InfoImageService.class);
         Message event = mock(Message.class);
         BufferedImage cached = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
         AtomicReference<Supplier<?>> queued = new AtomicReference<>();

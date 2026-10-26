@@ -32,7 +32,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.*;
 
@@ -41,7 +40,6 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
     private static volatile PlayerSnapshotService instance;
     private static final Object CACHE_OWNER_LOCK = new Object();
     private static final String UNAVAILABLE = "暂不可用";
-    private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("%[A-Za-z0-9]+_[^%\\r\\n]+%");
     private static final int MAX_STATISTICS = 512;
     private final boolean folia;
     private final Map<UUID, OnlineEntry> online = new ConcurrentHashMap<>();
@@ -54,7 +52,11 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
     private volatile boolean closed;
 
     public record OnlinePlayer(UUID uuid, String name) { }
-    public record InfoSnapshot(boolean online, String html) { }
+    /** Immutable, display-ready statistics. No HTML or Bukkit objects leave the owning thread. */
+    public record InfoSnapshot(boolean online, String name, String lastJoin,
+                               String time, String walk, String mined, String crafted) {
+        public String summary() { return String.join(" ", time, walk, mined, crafted); }
+    }
     private record OnlineEntry(Player player, OnlinePlayer snapshot) { }
     private record StatisticsSnapshot(int playedTicks, int walkedCentimeters) { }
 
@@ -133,7 +135,7 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         saveLater();
     }
 
-    public CompletableFuture<InfoSnapshot> captureInfo(UUID uuid, String name, String lastJoin, String template) {
+    public CompletableFuture<InfoSnapshot> captureInfo(UUID uuid, String name, String lastJoin) {
         if (closed) return CompletableFuture.failedFuture(new CancellationException("玩家快照服务已关闭"));
         OnlineEntry entry = online.get(uuid);
         CompletableFuture<InfoSnapshot> capture;
@@ -141,15 +143,15 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
             capture = Scheduler.callTask(entry.player(), () -> {
                 if (closed) throw new CancellationException("玩家快照服务已关闭");
                 if (!entry.player().isOnline()) throw new Scheduler.PlayerUnavailableException();
-                return capturePlayer(uuid, entry.player(), true, name, lastJoin, template);
+                return capturePlayer(uuid, entry.player(), true, name, lastJoin);
             }).exceptionallyCompose(error -> {
                 if (error instanceof Scheduler.PlayerUnavailableException && !closed) {
-                    return captureOffline(uuid, name, lastJoin, template);
+                    return captureOffline(uuid, name, lastJoin);
                 }
                 return CompletableFuture.failedFuture(error);
             });
         } else {
-            capture = captureOffline(uuid, name, lastJoin, template);
+            capture = captureOffline(uuid, name, lastJoin);
         }
         pending.add(capture);
         capture.orTimeout(5, TimeUnit.SECONDS);
@@ -158,7 +160,7 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         return capture;
     }
 
-    private CompletableFuture<InfoSnapshot> captureOffline(UUID uuid, String name, String lastJoin, String template) {
+    private CompletableFuture<InfoSnapshot> captureOffline(UUID uuid, String name, String lastJoin) {
         if (folia) {
             // 文件 IO 留在后台；即使查询途中玩家上线，也不访问跨区域的玩家对象。
             return Scheduler.callTaskAsync(() -> {
@@ -167,9 +169,9 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
                     WorldStatisticsReader.Statistics saved = WorldStatisticsReader.readFromWorld(worldDirectory, uuid);
                     if (closed) throw new CancellationException("玩家快照服务已关闭");
                     if (saved != null) {
-                        return new InfoSnapshot(false, fillTemplate(template, uuid, name, lastJoin, false,
+                        return createSnapshot(false, name, lastJoin,
                                 new StatisticsSnapshot(saved.playedTicks(), saved.walkedCentimeters()),
-                                decimalConverter(saved.minedBlocks()), decimalConverter(saved.craftedItems()), null));
+                                decimalConverter(saved.minedBlocks()), decimalConverter(saved.craftedItems()));
                     }
                 } catch (IOException e) {
                     XLogger.warn("读取玩家 {0} 的存档统计失败，尝试使用缓存: {1}", uuid, e.getMessage());
@@ -180,26 +182,24 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
                 synchronized (statistics) {
                     snapshot = statistics.get(uuid);
                 }
-                return new InfoSnapshot(false,
-                        fillTemplate(template, uuid, name, lastJoin, false, snapshot, UNAVAILABLE, UNAVAILABLE, null));
+                return createSnapshot(false, name, lastJoin, snapshot, UNAVAILABLE, UNAVAILABLE);
             });
         }
         return Scheduler.callTask(() -> {
             if (closed) throw new CancellationException("玩家快照服务已关闭");
             // Paper 的离线统计可能读取磁盘，但其在线切换及 PAPI 必须由主线程串行保护。
             OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
-            return capturePlayer(uuid, player, player.isOnline(), name, lastJoin, template);
+            return capturePlayer(uuid, player, player.isOnline(), name, lastJoin);
         });
     }
 
     private InfoSnapshot capturePlayer(UUID uuid, OfflinePlayer player, boolean isOnline,
-                                       String name, String lastJoin, String template) {
+                                       String name, String lastJoin) {
         StatisticsSnapshot snapshot = readStatistics(player);
         remember(uuid, snapshot);
         String mined = numericPlaceholder(player, "%statistic_mine_block%");
         String crafted = numericPlaceholder(player, "%statistic_craft_item%");
-        return new InfoSnapshot(isOnline,
-                fillTemplate(template, uuid, name, lastJoin, isOnline, snapshot, mined, crafted, player));
+        return createSnapshot(isOnline, name, lastJoin, snapshot, mined, crafted);
     }
 
     private static StatisticsSnapshot readStatistics(OfflinePlayer player) {
@@ -215,19 +215,12 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         }
     }
 
-    private static String fillTemplate(String template, UUID uuid, String name, String lastJoin, boolean isOnline,
-                                       StatisticsSnapshot stats, String mined, String crafted, OfflinePlayer player) {
-        Map<String, String> values = Map.of(
-                "nickname", name, "status", isOnline ? "[当前在线]" : "[上次在线] " + lastJoin,
-                "avatar", "https://api.mineatar.io/face/" + uuid + "?scale=12",
-                "time", stats == null ? UNAVAILABLE : timeConverter(stats.playedTicks()),
-                "walk", stats == null ? UNAVAILABLE : distanceConverter(stats.walkedCentimeters()),
-                "break", mined, "craft", crafted);
-        String result = template;
-        for (var value : values.entrySet()) result = result.replace("{{" + value.getKey() + "}}", value.getValue());
-        // 解析完整模板，保留自定义 PAPI 占位符；离线 Folia 不调用无法确定线程归属的扩展。
-        if (player != null) result = PlaceHolderApiManager.setPlaceholders(player, result);
-        return UNRESOLVED_PLACEHOLDER.matcher(result).replaceAll(UNAVAILABLE);
+    private static InfoSnapshot createSnapshot(boolean online, String name, String lastJoin,
+                                               StatisticsSnapshot stats, String mined, String crafted) {
+        return new InfoSnapshot(online, name, lastJoin,
+                stats == null ? UNAVAILABLE : timeConverter(stats.playedTicks()),
+                stats == null ? UNAVAILABLE : distanceConverter(stats.walkedCentimeters()),
+                mined, crafted);
     }
 
     private void remember(UUID uuid, StatisticsSnapshot value) {

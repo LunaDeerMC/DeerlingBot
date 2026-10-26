@@ -23,7 +23,7 @@ public final class DeerlingBot extends JavaPlugin {
     private DatabaseSettings databaseSettings;
     private CoreConnector connector;
     private CommandManager botCommands;
-    private WebDriverManager webDriver;
+    private InfoImageService infoImages;
     private PlaceHolderApiManager placeholders;
     private JoinLeaveEvents joinLeaveEvents;
     private EventIoService eventIo;
@@ -55,7 +55,6 @@ public final class DeerlingBot extends JavaPlugin {
         new Scheduler(this);
         new Notification(this);
         new XLogger(this);
-        new ResourceDownloader(this);
         try {
             loadSettings();
         } catch (Exception e) {
@@ -81,7 +80,7 @@ public final class DeerlingBot extends JavaPlugin {
             botCommands = new CommandManager(this);
             new BindManager(this);
             new MessageManager(this);
-            webDriver = new WebDriverManager(this);
+            infoImages = new InfoImageService();
             if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                 placeholders = new PlaceHolderApiManager(this);
             }
@@ -135,8 +134,8 @@ public final class DeerlingBot extends JavaPlugin {
             avatars.close();
             avatars = new AvatarManager();
             botCommands.reloadCommands();
-            webDriver.close();
-            webDriver = new WebDriverManager(this);
+            infoImages.close();
+            infoImages = new InfoImageService();
             connector.close();
             if (joinLeaveEvents == null || joinLeaveEvents.isLoaded()) connector.open();
             // 保留监听器及正在进行的入群审核，避免重复注册或丢失审核超时任务。
@@ -159,7 +158,7 @@ public final class DeerlingBot extends JavaPlugin {
         if (playerSnapshots != null) closeResource(playerSnapshots::close);
         closeResource(() -> HandlerList.unregisterAll(this));
         closeResource(Scheduler::cancelAll);
-        if (webDriver != null) closeResource(webDriver::close);
+        if (infoImages != null) closeResource(infoImages::close);
         if (placeholders != null) closeResource(() -> {
             try {
                 placeholders.unregister();
@@ -175,7 +174,7 @@ public final class DeerlingBot extends JavaPlugin {
         playerSnapshots = null;
         avatars = null;
         connector = null;
-        webDriver = null;
+        infoImages = null;
         placeholders = null;
         database = null;
         databaseSettings = null;

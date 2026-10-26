@@ -8,7 +8,7 @@ Paper/Bukkit Minecraft plugin targeting Java 17. It bridges QQ groups and Minecr
 
 - Entry point: [src/main/java/cn/lunadeer/mc/deerlingbot/DeerlingBot.java](../src/main/java/cn/lunadeer/mc/deerlingbot/DeerlingBot.java). `onEnable()` manually wires all managers and the startup order matters because the project uses eager singletons instead of DI.
 - OneBot messages are received in `CoreConnector`, parsed into subclasses of `AbstractPost`, then dispatched as Bukkit events via `Bukkit.getPluginManager().callEvent()`.
-- Reuse the existing subsystems instead of bypassing them: `CommandManager` for command discovery, `Scheduler` for async/delayed work, `DatabaseManager` plus table classes for persistence, and `WebDriverManager` for screenshot-based fancy commands.
+- Reuse the existing subsystems instead of bypassing them: `CommandManager` for command discovery, `Scheduler` for async/delayed work, `DatabaseManager` plus table classes for persistence, and `InfoImageService` and `InfoCardRenderer` for bounded, asynchronous Java2D player-card rendering.
 - PlaceholderAPI is optional. Chrome/WebDriver resources are external runtime dependencies managed by the plugin.
 
 ## Code Style

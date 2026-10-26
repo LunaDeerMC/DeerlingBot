@@ -54,7 +54,7 @@ class ReloadLifecycleTest {
              var avatars = mockConstruction(AvatarManager.class);
              var tables = mockConstruction(WhitelistTable.class);
              var commands = mockConstruction(CommandManager.class);
-             var drivers = mockConstruction(WebDriverManager.class);
+             var drivers = mockConstruction(InfoImageService.class);
              var connectors = mockConstruction(CoreConnector.class);
              var reviews = mockConstruction(JoinLeaveEvents.class, (review, context) -> {
                  when(review.isLoaded()).thenReturn(true);

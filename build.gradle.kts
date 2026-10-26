@@ -15,7 +15,6 @@ libraries += "mysql:mysql-connector-java:8.0.33"
 libraries += "net.kyori:adventure-platform-bukkit:4.3.3"
 libraries += "com.zaxxer:HikariCP:6.2.1"
 libraries += "com.alibaba:fastjson:2.0.31"
-libraries += "org.seleniumhq.selenium:selenium-java:4.9.0"
 
 // beta or alpha based on git branch
 var suffixes = getAndIncrementVersion()
@@ -46,6 +45,7 @@ allprojects {
         testImplementation("io.papermc.paper:paper-api:1.20.1-R0.1-SNAPSHOT")
         testImplementation("me.clip:placeholderapi:2.11.6")
         testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+        testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
         testImplementation("org.mockito:mockito-core:5.12.0")
         testImplementation("org.xerial:sqlite-jdbc:3.45.3.0")
         libraries.forEach { testImplementation(it) }

@@ -1,11 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.configuration;
 
-import cn.lunadeer.mc.deerlingbot.DeerlingBot;
-import cn.lunadeer.mc.deerlingbot.managers.ResourceDownloader;
-import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.configuration.*;
 
-import java.io.File;
 import java.util.List;
 
 public class Configuration extends ConfigurationFile {
@@ -50,7 +46,7 @@ public class Configuration extends ConfigurationFile {
     @Comments({
             "是否使用支持图片返回结果的指令",
             "启用后部分指令（如info）会返回美观的图片结果",
-            "此特性需要手动下载额外的包并正确配置环境",
+            "使用内置 Java2D 绘图，无需下载浏览器或模板",
     })
     public static boolean fancyCommand = false;
 
@@ -188,15 +184,5 @@ public class Configuration extends ConfigurationFile {
 
     public static boolean debug = false;
 
-    @PostProcess
-    public void postProcess() {
-        File libs = new File(DeerlingBot.getInstance().getDataFolder(), "libs");
-        File templates = new File(DeerlingBot.getInstance().getDataFolder(), "templates");
-        if (!libs.exists() || !templates.exists()) {
-            XLogger.error("由于缺少 libs 或 templates 文件夹，无法使用 fancyCommand 特性，详情请查阅文档。");
-            XLogger.warn("libs 下载地址：{0}", ResourceDownloader.getInstance().libsLink());
-            XLogger.warn("templates 下载地址：{0}", ResourceDownloader.getInstance().templatesLink());
-        }
-    }
 
 }

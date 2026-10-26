@@ -86,15 +86,13 @@ class PlayerSnapshotServiceTest {
                 });
             });
             try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday",
-                        "{{time}} {{walk}} {{break}} {{craft}} %custom_world%")
+                var snapshot = service.captureInfo(uuid, "Alex", "yesterday")
                         .get(5, TimeUnit.SECONDS);
                 assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 20 20 暂不可用", snapshot.html());
+                assertEquals("2分钟 5.00 m 20 20", snapshot.summary());
                 // 每次离线查询重新读取存档，而不是继续受 512 条插件缓存限制。
                 Files.writeString(mainWorld.resolve("stats").resolve(uuid + ".json"), "{\"stats\":{}}");
-                assertEquals("0分钟 0cm 0 0", service.captureInfo(uuid, "Alex", "yesterday",
-                        "{{time}} {{walk}} {{break}} {{craft}}").get(5, TimeUnit.SECONDS).html());
+                assertEquals("0分钟 0cm 0 0", service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
                 bukkit.verifyNoInteractions();
                 papi.verifyNoInteractions();
                 verifyNoInteractions(nether);
@@ -118,17 +116,16 @@ class PlayerSnapshotServiceTest {
              MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class)) {
             directGlobalTasks(scheduler, new AtomicBoolean());
             try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday",
-                        "{{time}} {{walk}} {{break}} {{craft}}").get(5, TimeUnit.SECONDS);
+                var snapshot = service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS);
                 assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 42 7", snapshot.html());
+                assertEquals("2分钟 5.00 m 42 7", snapshot.summary());
                 papi.verifyNoInteractions();
             }
         }
     }
 
     @Test
-    void onlineStatisticsAndCustomTemplatePapiRunOnEntityScheduler() throws Exception {
+    void onlineStatisticsAndPapiRunOnEntityScheduler() throws Exception {
         UUID uuid = UUID.randomUUID();
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(uuid);
@@ -155,7 +152,7 @@ class PlayerSnapshotServiceTest {
                 return result;
             });
             papi.when(() -> PlaceHolderApiManager.setPlaceholders(eq(player), anyString())).thenAnswer(call -> {
-                assertTrue(inEntity.get(), "完整模板的PAPI也必须在实体线程解析");
+                assertTrue(inEntity.get(), "统计 PAPI 必须在实体线程解析");
                 return ((String) call.getArgument(1)).replace("%statistic_mine_block%", "12")
                         .replace("%statistic_craft_item%", "3").replace("%custom_world%", "world");
             });
@@ -164,13 +161,12 @@ class PlayerSnapshotServiceTest {
                 assertTrue(service.isOnline(uuid));
                 assertEquals("Alex", service.onlinePlayers().get(0).name());
                 assertThrows(UnsupportedOperationException.class, () -> service.onlinePlayers().clear());
-                CompletableFuture<PlayerSnapshotService.InfoSnapshot> capture = service.captureInfo(uuid, "Alex", "yesterday",
-                        "{{time}} {{walk}} {{break}} %custom_world% {{status}}");
+                CompletableFuture<PlayerSnapshotService.InfoSnapshot> capture = service.captureInfo(uuid, "Alex", "yesterday");
                 assertFalse(capture.isDone());
                 entityTasks.remove(0).run();
                 var snapshot = capture.get(5, TimeUnit.SECONDS);
                 assertTrue(snapshot.online());
-                assertTrue(snapshot.html().contains("1分钟 2.50 m 12 world [当前在线]"));
+                assertEquals("1分钟 2.50 m 12 3", snapshot.summary());
                 bukkit.verifyNoInteractions();
             }
         }
@@ -195,13 +191,13 @@ class PlayerSnapshotServiceTest {
             }
             assertTrue(Files.exists(directory.resolve("player-statistics-cache.json")));
             try (PlayerSnapshotService reloaded = new PlayerSnapshotService(plugin(), true)) {
-                var snapshot = reloaded.captureInfo(uuid, "Alex", "yesterday", "{{time}} {{walk}} {{break}} {{craft}} %custom_world%")
+                var snapshot = reloaded.captureInfo(uuid, "Alex", "yesterday")
                         .get(5, TimeUnit.SECONDS);
                 assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 暂不可用 暂不可用 暂不可用", snapshot.html());
-                var unknown = reloaded.captureInfo(UUID.randomUUID(), "Other", "yesterday", "{{time}} {{walk}} {{break}} {{craft}}")
+                assertEquals("2分钟 5.00 m 暂不可用 暂不可用", snapshot.summary());
+                var unknown = reloaded.captureInfo(UUID.randomUUID(), "Other", "yesterday")
                         .get(5, TimeUnit.SECONDS);
-                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用", unknown.html());
+                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用", unknown.summary());
                 bukkit.verifyNoInteractions();
                 papi.verifyNoInteractions();
             }
@@ -229,8 +225,7 @@ class PlayerSnapshotServiceTest {
                     CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
             try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
                 service.onQuit(new PlayerQuitEvent(player, ""));
-                assertEquals("2分钟 5.00 m 暂不可用 暂不可用", service.captureInfo(uuid, "Alex", "yesterday",
-                        "{{time}} {{walk}} {{break}} {{craft}}").get(5, TimeUnit.SECONDS).html());
+                assertEquals("2分钟 5.00 m 暂不可用 暂不可用", service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
                 logger.verify(() -> XLogger.warn(eq("读取玩家 {0} 的存档统计失败，尝试使用缓存: {1}"),
                         eq(uuid), anyString()));
                 assertEquals("{truncated", Files.readString(mainWorld.resolve("stats").resolve(uuid + ".json")));
@@ -260,9 +255,9 @@ class PlayerSnapshotServiceTest {
                 return ((String) call.getArgument(1)).replace("%custom_rank%", "VIP");
             });
             try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(), false)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday", "{{time}} %custom_rank%")
+                var snapshot = service.captureInfo(uuid, "Alex", "yesterday")
                         .get(5, TimeUnit.SECONDS);
-                assertEquals("1分钟 VIP", snapshot.html());
+                assertEquals("1分钟 12.00 m 暂不可用 暂不可用", snapshot.summary());
                 assertFalse(snapshot.online());
             }
         }
@@ -280,12 +275,12 @@ class PlayerSnapshotServiceTest {
             scheduler.when(() -> Scheduler.callTask(eq(player), any(Supplier.class))).thenReturn(retired);
             try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(), true)) {
                 service.onJoin(new PlayerJoinEvent(player, ""));
-                var capture = service.captureInfo(uuid, "Alex", "yesterday", "{{time}} %custom_world%");
+                var capture = service.captureInfo(uuid, "Alex", "yesterday");
                 retired.completeExceptionally(new Scheduler.PlayerUnavailableException());
-                assertEquals("暂不可用 暂不可用", capture.get(5, TimeUnit.SECONDS).html());
+                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用", capture.get(5, TimeUnit.SECONDS).summary());
                 CompletableFuture<Object> stalled = new CompletableFuture<>();
                 scheduler.when(() -> Scheduler.callTask(eq(player), any(Supplier.class))).thenReturn(stalled);
-                var pending = service.captureInfo(uuid, "Alex", "yesterday", "{{time}}");
+                var pending = service.captureInfo(uuid, "Alex", "yesterday");
                 service.close();
                 assertTrue(pending.isCancelled());
             }
