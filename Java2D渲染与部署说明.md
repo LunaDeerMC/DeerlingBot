@@ -14,7 +14,7 @@
 
 ## 统计采集注意事项
 
-**所有四项数值**（累计在线时间、走过的总路程、累计挖掘、累计合成）均在异步线程读取主世界 `<UUID>.json` 的 `minecraft:custom`、`minecraft:mined` 和 `minecraft:crafted` 字段，优先 `world/stats/`，兼容 DeerFolia 的 `world/players/stats/`。每次 `/info` 重新读取一次；JSON 不存在或无法解析时四项均显示“暂不可用”，不回退到可能过期的插件缓存。存档存在但某一统计类别为空时，该项显示 **0**。玩家存档为只读，插件不会编辑或强制保存玩家资料。在线玩家的磁盘 JSON **不保证逐 tick 更新**，因此统计可能滞后于游戏内实时数值，直到 Minecraft 下次保存该玩家。昵称和在线状态仍分别来自绑定记录及在线事件，因为它们并不包含在统计 JSON 中。PAPI 仍供其他消息模板使用，但 **/info 不再调用 PAPI**。旧的 `player-statistics-cache.json` 可以原样保留用于回退，新的代码不读取、不写入。
+**所有四项数值**（累计在线时间、走过的总路程、累计挖掘、累计合成）均在异步线程读取主世界 `<UUID>.json` 的 `minecraft:custom`、`minecraft:mined` 和 `minecraft:crafted` 字段，优先 `world/stats/`，兼容 DeerFolia 的 `world/players/stats/`。世界存档根目录优先根据 **服务端工作目录的 `server.properties` 中 `level-name`** 确定，再回退 Bukkit 报告的世界目录；这避免部分 Folia 构建在插件加载时返回维度路径或空世界列表导致全项“暂不可用”。路径解析与 JSON 文件读取均在异步线程执行。首次成功读取会在日志记录有效目录，首次全部未命中会记录尝试的目录。每次 `/info` 重新读取一次；JSON 不存在或无法解析时四项均显示“暂不可用”，不回退到可能过期的插件缓存。存档存在但某一统计类别为空时，该项显示 **0**。玩家存档为只读，插件不会编辑或强制保存玩家资料。在线玩家的磁盘 JSON **不保证逐 tick 更新**，因此统计可能滞后于游戏内实时数值，直到 Minecraft 下次保存该玩家。昵称和在线状态仍分别来自绑定记录及在线事件，因为它们并不包含在统计 JSON 中。PAPI 仍供其他消息模板使用，但 **/info 不再调用 PAPI**。旧的 `player-statistics-cache.json` 可以原样保留用于回退，新的代码不读取、不写入。
 
 ## 构建、检查和回退
 

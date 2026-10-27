@@ -3,10 +3,15 @@ package cn.lunadeer.mc.deerlingbot.managers;
 import com.alibaba.fastjson2.JSONObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 
 /** 只读取服务端保存的原版统计，不持有或访问 Bukkit 玩家对象。 */
@@ -24,6 +29,36 @@ final class WorldStatisticsReader {
         if (worldDirectory == null) return null;
         Statistics normal = read(worldDirectory.resolve("stats"), uuid);
         return normal != null ? normal : read(worldDirectory.resolve("players").resolve("stats"), uuid);
+    }
+
+    /**
+     * Server.getWorlds()/World.getWorldFolder() can point at a dimension or be
+     * unavailable during plugin startup on some Folia builds. The authoritative
+     * save root comes from server.properties level-name, relative to the server
+     * world container. All filesystem checks happen on the async task.
+     */
+    static List<Path> resolveWorldRoots(Path serverRoot, List<Path> bukkitRoots) {
+        LinkedHashSet<Path> paths = new LinkedHashSet<>();
+        if (serverRoot != null) {
+            Path propsPath = serverRoot.resolve("server.properties");
+            if (Files.isRegularFile(propsPath)) {
+                Properties properties = new Properties();
+                try (InputStream stream = Files.newInputStream(propsPath)) {
+                    properties.load(stream);
+                    String name = properties.getProperty("level-name", "").trim();
+                    if (!name.isEmpty()) {
+                        Path configured = serverRoot.resolve(name).normalize();
+                        if (configured.startsWith(serverRoot)) paths.add(configured);
+                    }
+                } catch (IOException | IllegalArgumentException ignored) {
+                    // Fall back to Bukkit-reported paths without blocking /info.
+                }
+            }
+        }
+        for (Path path : bukkitRoots) {
+            if (path != null) paths.add(path.toAbsolutePath().normalize());
+        }
+        return List.copyOf(paths);
     }
 
     static Statistics read(Path directory, UUID uuid) throws IOException {

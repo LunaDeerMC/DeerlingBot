@@ -1,6 +1,5 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
-import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Server;
@@ -23,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -150,6 +150,42 @@ class PlayerSnapshotServiceTest {
     }
 
     @Test
+    void readsConfiguredSaveRootWhenBukkitReportsIncorrectDimensionFolder() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        save(uuid, JSON, true);
+        Files.writeString(directory.resolve("server.properties"), "level-name=world\n");
+        JavaPlugin plugin = plugin(directory.resolve("unrelated-dimension"));
+        when(plugin.getDataFolder()).thenReturn(directory.resolve("plugins/DeerlingBot").toFile());
+        when(plugin.getServer().getWorlds().get(0).getName()).thenReturn("wrong-world-name");
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
+             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class)) {
+            stubScheduler(scheduler);
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin)) {
+                assertEquals("2分钟 5.00 m 20 20",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            }
+            papi.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void readsConfiguredSaveRootWhenWorldListIsNotYetPopulated() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        save(uuid, JSON, true);
+        Files.writeString(directory.resolve("server.properties"), "level-name=world\n");
+        JavaPlugin plugin = plugin(directory.resolve("bad"));
+        when(plugin.getDataFolder()).thenReturn(directory.resolve("plugins/DeerlingBot").toFile());
+        when(plugin.getServer().getWorlds()).thenReturn(List.of());
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class)) {
+            stubScheduler(scheduler);
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin)) {
+                assertEquals("2分钟 5.00 m 20 20",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            }
+        }
+    }
+
+    @Test
     void absentJsonDoesNotUseOldCacheAndReportsAllStatisticsUnavailable() throws Exception {
         UUID uuid = UUID.randomUUID();
         Files.writeString(directory.resolve("player-statistics-cache.json"),
@@ -182,19 +218,16 @@ class PlayerSnapshotServiceTest {
     void damagedJsonDoesNotCrashAndDoesNotFallBackToPapi() throws Exception {
         UUID uuid = UUID.randomUUID();
         Path file = save(uuid, "{truncated", true);
+        JavaPlugin plugin = plugin(directory.resolve("world"));
+        Logger logger = mock(Logger.class);
+        when(plugin.getLogger()).thenReturn(logger);
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
-             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class);
-             MockedStatic<XLogger> logger = mockStatic(XLogger.class)) {
+             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class)) {
             stubScheduler(scheduler);
-            // Keep the error-path logger verification on this test thread:
-            // Mockito static mocks are thread-scoped. Other tests assert async IO.
-            scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenAnswer(call ->
-                    CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")))) {
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin)) {
                 assertEquals("暂不可用 暂不可用 暂不可用 暂不可用",
                         service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
-                logger.verify(() -> XLogger.warn(eq("读取玩家 {0} 的存档统计失败: {1}"),
-                        eq(uuid), anyString()));
+                verify(logger).warning(contains("读取统计文件失败"));
                 papi.verifyNoInteractions();
                 assertEquals("{truncated", Files.readString(file));
             }
