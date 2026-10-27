@@ -8,13 +8,13 @@
 - `assets/bailuyuan-logo.png` 与 `assets/fonts/`：随 JAR 分发，保持各宿主机的字体效果一致。随字体附带 OFL 授权说明。
 - `InfoImageService`：后台单线程生成图片，最多 4 项排队，不持有大尺寸图片缓存；插件重载或停用时取消待执行任务。不要在 Folia 区域线程或 Bukkit 主线程上同步绘图。
 - `AvatarManager`：异步获取 Mineatar 真实 Minecraft 玩家头像（玩家 UUID）。连接限时 2.5 秒，接收响应体的空闲限时 2.5 秒（只在响应头到达后开始计时），排队和下载总计不超过 6 秒。成功头像新鲜缓存 10 分钟，随后最多保留 12 小时以应对暂时性网络失败；从未成功取得头像时，Java2D 显示明确的中性“暂不可用”占位图，不再使用虚构的 Minecraft 玩家脸。
-- `PlayerSnapshotService`：产出不可变的昵称、在线状态、最近上线时间、在线时长、行走距离、累计挖掘和累计合成数据。数据采集与绘图彻底分离，避免跨 Folia 区域线程访问玩家对象。
+- `PlayerSnapshotService`：产出不可变的昵称、在线状态、最近上线时间与四项统计。在线状态通过加入/退出事件维护；**在线和离线玩家的四项统计全部使用异步线程直接读取世界 JSON**，不再使用 Bukkit `getStatistic`、Statistic PAPI 或老的 `player-statistics-cache.json` 读取/回写。
 - `FancyInfo`：将快照与头像组合后排入 Java2D 服务，编码和 OneBot 消息发送继续在异步任务中进行，重载后的旧请求不能发送。
 - `fancyCommand`：保留原开关。启用时 `/info` 发送图片；关闭时沿用原文字版逻辑。**无需再手动下载任何浏览器资源**。
 
 ## 统计采集注意事项
 
-在线玩家的 Bukkit 统计 / PAPI 通过所属实体线程采集；Folia 离线玩家从主世界原版统计 JSON 读取，支持 `world/stats/` 和 DeerFolia 使用的 `world/players/stats/` 两种布局。离线文件无法使用时回退到小型持久统计缓存，未知字段显示“暂不可用”。玩家存档为只读，不会被插件编辑。
+**所有四项数值**（累计在线时间、走过的总路程、累计挖掘、累计合成）均在异步线程读取主世界 `<UUID>.json` 的 `minecraft:custom`、`minecraft:mined` 和 `minecraft:crafted` 字段，优先 `world/stats/`，兼容 DeerFolia 的 `world/players/stats/`。每次 `/info` 重新读取一次；JSON 不存在或无法解析时四项均显示“暂不可用”，不回退到可能过期的插件缓存。存档存在但某一统计类别为空时，该项显示 **0**。玩家存档为只读，插件不会编辑或强制保存玩家资料。在线玩家的磁盘 JSON **不保证逐 tick 更新**，因此统计可能滞后于游戏内实时数值，直到 Minecraft 下次保存该玩家。昵称和在线状态仍分别来自绑定记录及在线事件，因为它们并不包含在统计 JSON 中。PAPI 仍供其他消息模板使用，但 **/info 不再调用 PAPI**。旧的 `player-statistics-cache.json` 可以原样保留用于回退，新的代码不读取、不写入。
 
 ## 构建、检查和回退
 

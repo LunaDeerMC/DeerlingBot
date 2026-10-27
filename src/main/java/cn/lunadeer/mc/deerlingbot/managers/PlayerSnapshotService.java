@@ -2,10 +2,6 @@ package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
 import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
-import com.alibaba.fastjson2.JSONObject;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.Statistic;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,78 +12,58 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static cn.lunadeer.mc.deerlingbot.utils.Misc.*;
 
-/** 将玩家状态和占位符在所属线程转换为不可变数据，后台任务不保留玩家对象。 */
+/**
+ * Provides online presence and immutable /info statistics without synchronous
+ * world-file IO or Bukkit/PAPI statistics calls on Folia region/global threads.
+ *
+ * Statistics are read from the on-disk vanilla JSON snapshot for BOTH online
+ * and offline players. For online players, values reflect the most recent disk
+ * save, not unsaved in-memory changes. Never force-save players from /info.
+ */
 public final class PlayerSnapshotService implements Listener, AutoCloseable {
     private static volatile PlayerSnapshotService instance;
-    private static final Object CACHE_OWNER_LOCK = new Object();
     private static final String UNAVAILABLE = "暂不可用";
-    private static final int MAX_STATISTICS = 512;
-    private final boolean folia;
+
     private final Map<UUID, OnlineEntry> online = new ConcurrentHashMap<>();
-    private final Map<UUID, StatisticsSnapshot> statistics = new LinkedHashMap<>();
     private final Set<CompletableFuture<?>> pending = ConcurrentHashMap.newKeySet();
-    private final Path cacheFile;
     private final Path worldDirectory;
-    private final ThreadPoolExecutor cacheWriter;
-    private final CompletableFuture<Void> cacheLoaded = new CompletableFuture<>();
     private volatile boolean closed;
 
     public record OnlinePlayer(UUID uuid, String name) { }
-    /** Immutable, display-ready statistics. No HTML or Bukkit objects leave the owning thread. */
+
+    /** Immutable display values; only name/presence are not from stats JSON. */
     public record InfoSnapshot(boolean online, String name, String lastJoin,
                                String time, String walk, String mined, String crafted) {
         public String summary() { return String.join(" ", time, walk, mined, crafted); }
     }
+
     private record OnlineEntry(Player player, OnlinePlayer snapshot) { }
-    private record StatisticsSnapshot(int playedTicks, int walkedCentimeters) { }
 
     public PlayerSnapshotService(JavaPlugin plugin) {
-        this(plugin, Scheduler.isFolia());
-    }
-
-    PlayerSnapshotService(JavaPlugin plugin, boolean folia) {
-        this.folia = folia;
-        this.cacheFile = plugin.getDataFolder().toPath().resolve("player-statistics-cache.json");
-        // 原版玩家统计统一保存在主世界，不能累加下界、末地或其他世界的副本。
-        var worlds = plugin.getServer().getWorlds();
-        this.worldDirectory = worlds.isEmpty() ? null : worlds.get(0).getWorldFolder().toPath();
-        // 只保留最新一次待写入任务，避免频繁上下线积累磁盘任务。
-        cacheWriter = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1), task -> {
-            Thread thread = new Thread(task, "DeerlingBot-statistics-cache");
-            thread.setDaemon(true);
-            return thread;
-        }, new ThreadPoolExecutor.DiscardOldestPolicy());
-        cacheWriter.execute(() -> {
-            try {
-                loadStatistics();
-            } finally {
-                cacheLoaded.complete(null);
-            }
-        });
+        this.worldDirectory = plugin.getServer().getWorlds().stream()
+                .filter(world -> world.getEnvironment() == org.bukkit.World.Environment.NORMAL)
+                .findFirst()
+                .or(() -> plugin.getServer().getWorlds().stream().findFirst())
+                .map(world -> world.getWorldFolder().toPath())
+                .orElse(null);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
-        synchronized (CACHE_OWNER_LOCK) {
-            instance = this;
-        }
-        // 启用时已有玩家也补入快照；全局线程只取得引用，名字和状态由实体线程读取。
+        instance = this;
+
+        // Load presence snapshots for players already online on plugin enable/reload.
+        // Bukkit player references stay on the entity's owning thread.
         Scheduler.callTask(() -> List.copyOf(plugin.getServer().getOnlinePlayers())).thenAccept(players -> {
             if (closed) return;
             for (Player player : players) {
@@ -100,9 +76,9 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
     }
 
     public static PlayerSnapshotService getInstance() {
-        PlayerSnapshotService current = instance;
-        if (current == null) throw new IllegalStateException("玩家快照服务尚未初始化");
-        return current;
+        PlayerSnapshotService service = instance;
+        if (service == null) throw new IllegalStateException("玩家快照服务尚未初始化");
+        return service;
     }
 
     public boolean isOnline(UUID uuid) {
@@ -130,156 +106,37 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
         online.computeIfPresent(uuid, (ignored, entry) -> entry.player() == player ? null : entry);
-        // 退出事件仍在玩家所属线程，只读取基础统计，不生成模板或运行任意 PAPI 扩展。
-        remember(uuid, readStatistics(player));
-        saveLater();
+        // No player.getStatistic() and no synchronous statistics-file read.
     }
 
     public CompletableFuture<InfoSnapshot> captureInfo(UUID uuid, String name, String lastJoin) {
         if (closed) return CompletableFuture.failedFuture(new CancellationException("玩家快照服务已关闭"));
-        OnlineEntry entry = online.get(uuid);
-        CompletableFuture<InfoSnapshot> capture;
-        if (entry != null) {
-            capture = Scheduler.callTask(entry.player(), () -> {
+        // This is a thread-safe presence snapshot, not a Bukkit player-statistics query.
+        boolean currentlyOnline = online.containsKey(uuid);
+        CompletableFuture<InfoSnapshot> capture = Scheduler.callTaskAsync(() -> {
+            if (closed) throw new CancellationException("玩家快照服务已关闭");
+            try {
+                WorldStatisticsReader.Statistics data = WorldStatisticsReader.readFromWorld(worldDirectory, uuid);
                 if (closed) throw new CancellationException("玩家快照服务已关闭");
-                if (!entry.player().isOnline()) throw new Scheduler.PlayerUnavailableException();
-                return capturePlayer(uuid, entry.player(), true, name, lastJoin);
-            }).exceptionallyCompose(error -> {
-                if (error instanceof Scheduler.PlayerUnavailableException && !closed) {
-                    return captureOffline(uuid, name, lastJoin);
+                if (data != null) {
+                    return new InfoSnapshot(currentlyOnline, name, lastJoin,
+                            timeConverter(data.playedTicks()),
+                            distanceConverter(data.walkedCentimeters()),
+                            decimalConverter(data.minedBlocks()),
+                            decimalConverter(data.craftedItems()));
                 }
-                return CompletableFuture.failedFuture(error);
-            });
-        } else {
-            capture = captureOffline(uuid, name, lastJoin);
-        }
+            } catch (IOException e) {
+                XLogger.warn("读取玩家 {0} 的存档统计失败: {1}", uuid, e.getMessage());
+            }
+            // Never silently substitute stale plugin cache values for the disk JSON.
+            return new InfoSnapshot(currentlyOnline, name, lastJoin,
+                    UNAVAILABLE, UNAVAILABLE, UNAVAILABLE, UNAVAILABLE);
+        });
         pending.add(capture);
         capture.orTimeout(5, TimeUnit.SECONDS);
         capture.whenComplete((result, error) -> pending.remove(capture));
         if (closed) capture.cancel(false);
         return capture;
-    }
-
-    private CompletableFuture<InfoSnapshot> captureOffline(UUID uuid, String name, String lastJoin) {
-        if (folia) {
-            // 文件 IO 留在后台；即使查询途中玩家上线，也不访问跨区域的玩家对象。
-            return Scheduler.callTaskAsync(() -> {
-                if (closed) throw new CancellationException("玩家快照服务已关闭");
-                try {
-                    WorldStatisticsReader.Statistics saved = WorldStatisticsReader.readFromWorld(worldDirectory, uuid);
-                    if (closed) throw new CancellationException("玩家快照服务已关闭");
-                    if (saved != null) {
-                        return createSnapshot(false, name, lastJoin,
-                                new StatisticsSnapshot(saved.playedTicks(), saved.walkedCentimeters()),
-                                decimalConverter(saved.minedBlocks()), decimalConverter(saved.craftedItems()));
-                    }
-                } catch (IOException e) {
-                    XLogger.warn("读取玩家 {0} 的存档统计失败，尝试使用缓存: {1}", uuid, e.getMessage());
-                }
-                cacheLoaded.join();
-                if (closed) throw new CancellationException("玩家快照服务已关闭");
-                StatisticsSnapshot snapshot;
-                synchronized (statistics) {
-                    snapshot = statistics.get(uuid);
-                }
-                return createSnapshot(false, name, lastJoin, snapshot, UNAVAILABLE, UNAVAILABLE);
-            });
-        }
-        return Scheduler.callTask(() -> {
-            if (closed) throw new CancellationException("玩家快照服务已关闭");
-            // Paper 的离线统计可能读取磁盘，但其在线切换及 PAPI 必须由主线程串行保护。
-            OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
-            return capturePlayer(uuid, player, player.isOnline(), name, lastJoin);
-        });
-    }
-
-    private InfoSnapshot capturePlayer(UUID uuid, OfflinePlayer player, boolean isOnline,
-                                       String name, String lastJoin) {
-        StatisticsSnapshot snapshot = readStatistics(player);
-        remember(uuid, snapshot);
-        String mined = numericPlaceholder(player, "%statistic_mine_block%");
-        String crafted = numericPlaceholder(player, "%statistic_craft_item%");
-        return createSnapshot(isOnline, name, lastJoin, snapshot, mined, crafted);
-    }
-
-    private static StatisticsSnapshot readStatistics(OfflinePlayer player) {
-        return new StatisticsSnapshot(player.getStatistic(Statistic.PLAY_ONE_MINUTE),
-                player.getStatistic(Statistic.WALK_ONE_CM));
-    }
-
-    private static String numericPlaceholder(OfflinePlayer player, String placeholder) {
-        try {
-            return decimalConverter(Integer.parseInt(PlaceHolderApiManager.setPlaceholders(player, placeholder)));
-        } catch (NumberFormatException e) {
-            return UNAVAILABLE;
-        }
-    }
-
-    private static InfoSnapshot createSnapshot(boolean online, String name, String lastJoin,
-                                               StatisticsSnapshot stats, String mined, String crafted) {
-        return new InfoSnapshot(online, name, lastJoin,
-                stats == null ? UNAVAILABLE : timeConverter(stats.playedTicks()),
-                stats == null ? UNAVAILABLE : distanceConverter(stats.walkedCentimeters()),
-                mined, crafted);
-    }
-
-    private void remember(UUID uuid, StatisticsSnapshot value) {
-        synchronized (statistics) {
-            statistics.remove(uuid);
-            statistics.put(uuid, value);
-            while (statistics.size() > MAX_STATISTICS) statistics.remove(statistics.keySet().iterator().next());
-        }
-    }
-
-    private void saveLater() {
-        if (!cacheWriter.isShutdown()) cacheWriter.execute(this::saveStatistics);
-    }
-
-    private void loadStatistics() {
-        try {
-            if (!Files.exists(cacheFile) || Files.size(cacheFile) > 256 * 1024) return;
-            JSONObject cached = JSONObject.parseObject(Files.readString(cacheFile));
-            synchronized (statistics) {
-                for (String key : cached.keySet()) {
-                    if (statistics.size() >= MAX_STATISTICS) break;
-                    JSONObject data = cached.getJSONObject(key);
-                    statistics.putIfAbsent(UUID.fromString(key), new StatisticsSnapshot(
-                            Math.max(0, data.getIntValue("playedTicks")), Math.max(0, data.getIntValue("walkedCentimeters"))));
-                }
-            }
-        } catch (Exception e) {
-            XLogger.warn("读取玩家统计缓存失败，将等待新的在线快照: {0}", e.getMessage());
-        }
-    }
-
-    private void saveStatistics() {
-        Path temporary = null;
-        try {
-            JSONObject data = new JSONObject();
-            synchronized (statistics) {
-                statistics.forEach((uuid, value) -> data.put(uuid.toString(), value));
-            }
-            Files.createDirectories(cacheFile.getParent());
-            temporary = Files.createTempFile(cacheFile.getParent(), ".statistics-", ".json");
-            Files.writeString(temporary, data.toJSONString());
-            synchronized (CACHE_OWNER_LOCK) {
-                // 旧服务超时退出后不得覆盖新服务的缓存。
-                if (instance != this) return;
-                try {
-                    Files.move(temporary, cacheFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (AtomicMoveNotSupportedException e) {
-                    Files.move(temporary, cacheFile, StandardCopyOption.REPLACE_EXISTING);
-                }
-            }
-        } catch (Exception e) {
-            XLogger.warn("写入玩家统计缓存失败: {0}", e.getMessage());
-        } finally {
-            if (temporary != null) try {
-                Files.deleteIfExists(temporary);
-            } catch (Exception e) {
-                XLogger.warn("清理玩家统计缓存临时文件失败: {0}", e.getMessage());
-            }
-        }
     }
 
     @Override
@@ -290,15 +147,6 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         pending.forEach(future -> future.cancel(false));
         pending.clear();
         online.clear();
-        saveLater();
-        cacheWriter.shutdown();
-        try {
-            if (!cacheWriter.awaitTermination(1, TimeUnit.SECONDS)) XLogger.warn("玩家统计缓存尚未写完，本次停用不再继续等待");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        synchronized (CACHE_OWNER_LOCK) {
-            if (instance == this) instance = null;
-        }
+        if (instance == this) instance = null;
     }
 }

@@ -1,9 +1,8 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
-import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import cn.lunadeer.mc.deerlingbot.utils.XLogger;
+import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.Server;
 import org.bukkit.Statistic;
 import org.bukkit.World;
@@ -18,7 +17,6 @@ import org.mockito.MockedStatic;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -33,257 +31,194 @@ import static org.mockito.Mockito.*;
 class PlayerSnapshotServiceTest {
     @TempDir Path directory;
 
-    private JavaPlugin plugin() {
+    private JavaPlugin plugin(Path worldFolder) {
         JavaPlugin plugin = mock(JavaPlugin.class);
         Server server = mock(Server.class);
+        World overworld = mock(World.class);
         when(plugin.getDataFolder()).thenReturn(directory.toFile());
         when(plugin.getServer()).thenReturn(server);
         when(server.getPluginManager()).thenReturn(mock(PluginManager.class));
         when(server.getOnlinePlayers()).thenReturn(List.of());
+        when(overworld.getEnvironment()).thenReturn(World.Environment.NORMAL);
+        when(overworld.getWorldFolder()).thenReturn(worldFolder.toFile());
+        when(server.getWorlds()).thenReturn(List.of(overworld));
         return plugin;
     }
 
-    private static void directGlobalTasks(MockedStatic<Scheduler> scheduler, AtomicBoolean inGlobal) {
+    private void stubScheduler(MockedStatic<Scheduler> scheduler) {
         scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenAnswer(call ->
                 CompletableFuture.supplyAsync((Supplier<?>) call.getArgument(0)));
-        scheduler.when(() -> Scheduler.callTask(any(Supplier.class))).thenAnswer(call -> {
-            inGlobal.set(true);
-            try {
-                return CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get());
-            } finally {
-                inGlobal.set(false);
-            }
-        });
+        scheduler.when(() -> Scheduler.callTask(any(Supplier.class))).thenAnswer(call ->
+                CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
     }
 
+    private Path save(UUID uuid, String json, boolean deerFoliaLayout) throws Exception {
+        Path stats = directory.resolve("world").resolve(deerFoliaLayout ? "players/stats" : "stats");
+        Files.createDirectories(stats);
+        Path file = stats.resolve(uuid + ".json");
+        Files.writeString(file, json);
+        return file;
+    }
+
+    private static final String JSON = """
+            {"stats": {
+                "minecraft:custom": {"minecraft:play_time": 2400, "minecraft:walk_one_cm": 500},
+                "minecraft:mined": {"minecraft:stone": 12, "minecraft:dirt": 8},
+                "minecraft:crafted": {"minecraft:stick": 4, "minecraft:torch": 16}
+            }, "DataVersion": 3465}
+            """;
+
     @Test
-    void foliaOfflineReadsMainWorldFileOnBackgroundThreadWithoutPapiOrCachedPlayer() throws Exception {
+    void offlineReadsAllFourStatisticsFromWorldJsonAndRefreshesForNextRequest() throws Exception {
         UUID uuid = UUID.randomUUID();
-        Path mainWorld = directory.resolve("custom-main-world");
-        Files.createDirectories(mainWorld.resolve("stats"));
-        Files.writeString(mainWorld.resolve("stats").resolve(uuid + ".json"), """
-                {"stats": {
-                  "minecraft:custom": {"minecraft:play_time": 2400, "minecraft:walk_one_cm": 500},
-                  "minecraft:mined": {"minecraft:stone": 12, "minecraft:dirt": 8},
-                  "minecraft:crafted": {"minecraft:stick": 4, "minecraft:torch": 16}
-                }, "DataVersion": 3465}
-                """);
-        JavaPlugin plugin = plugin();
-        World world = mock(World.class);
-        when(world.getWorldFolder()).thenReturn(mainWorld.toFile());
-        World nether = mock(World.class);
-        when(plugin.getServer().getWorlds()).thenReturn(List.of(world, nether));
-        Thread callingThread = Thread.currentThread();
+        Path file = save(uuid, JSON, false);
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
              MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class);
-             MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
-            scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenAnswer(call -> {
-                Supplier<?> work = call.getArgument(0);
-                return CompletableFuture.supplyAsync(() -> {
-                    assertNotSame(callingThread, Thread.currentThread());
-                    return work.get();
-                });
-            });
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday")
-                        .get(5, TimeUnit.SECONDS);
-                assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 20 20", snapshot.summary());
-                // 每次离线查询重新读取存档，而不是继续受 512 条插件缓存限制。
-                Files.writeString(mainWorld.resolve("stats").resolve(uuid + ".json"), "{\"stats\":{}}");
-                assertEquals("0分钟 0cm 0 0", service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
-                bukkit.verifyNoInteractions();
-                papi.verifyNoInteractions();
-                verifyNoInteractions(nether);
-            }
+             MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class);
+             PlayerSnapshotService service = create(plugin(directory.resolve("world")), scheduler)) {
+            var snapshot = service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS);
+            assertFalse(snapshot.online());
+            assertEquals("2分钟 5.00 m 20 20", snapshot.summary());
+
+            Files.writeString(file, "{\"stats\":{\"minecraft:mined\":{\"minecraft:stone\":42},\"minecraft:crafted\":{\"minecraft:torch\":7}}}");
+            assertEquals("0分钟 0cm 42 7",
+                    service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            assertFalse(Files.exists(directory.resolve("player-statistics-cache.json")));
+            papi.verifyNoInteractions();
+            bukkit.verifyNoInteractions();
         }
     }
 
     @Test
-    void foliaOfflineInfoReadsActualDeerFoliaPlayersStatsLayout() throws Exception {
+    void onlineReadsSameJsonOnAsyncThreadWithoutInvokingBukkitStatisticsOrPapi() throws Exception {
         UUID uuid = UUID.randomUUID();
-        Path mainWorld = directory.resolve("world");
-        Path stats = mainWorld.resolve("players").resolve("stats");
-        Files.createDirectories(stats);
-        Files.writeString(stats.resolve(uuid + ".json"),
-                "{\"stats\":{\"minecraft:custom\":{\"minecraft:play_time\":2400,\"minecraft:walk_one_cm\":500},\"minecraft:mined\":{\"minecraft:stone\":42},\"minecraft:crafted\":{\"minecraft:stick\":7}}}");
-        JavaPlugin plugin = plugin();
-        World world = mock(World.class);
-        when(world.getWorldFolder()).thenReturn(mainWorld.toFile());
-        when(plugin.getServer().getWorlds()).thenReturn(List.of(world));
-        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
-             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS);
-                assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 42 7", snapshot.summary());
-                papi.verifyNoInteractions();
-            }
-        }
-    }
-
-    @Test
-    void onlineStatisticsAndPapiRunOnEntityScheduler() throws Exception {
-        UUID uuid = UUID.randomUUID();
+        save(uuid, JSON, true);
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(uuid);
         when(player.getName()).thenReturn("Alex");
-        when(player.isOnline()).thenReturn(true);
-        AtomicBoolean inEntity = new AtomicBoolean();
-        when(player.getStatistic(any(Statistic.class))).thenAnswer(call -> {
-            assertTrue(inEntity.get(), "统计只能在实体线程读取");
-            return call.getArgument(0) == Statistic.PLAY_ONE_MINUTE ? 1200 : 250;
-        });
-        List<Runnable> entityTasks = new ArrayList<>();
+        Thread caller = Thread.currentThread();
+        AtomicBoolean offThread = new AtomicBoolean();
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
              MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class);
              MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
-            scheduler.when(() -> Scheduler.callTask(eq(player), any(Supplier.class))).thenAnswer(call -> {
-                CompletableFuture<Object> result = new CompletableFuture<>();
-                Supplier<?> supplier = call.getArgument(1);
-                entityTasks.add(() -> {
-                    inEntity.set(true);
-                    try { result.complete(supplier.get()); }
-                    finally { inEntity.set(false); }
-                });
-                return result;
-            });
-            papi.when(() -> PlaceHolderApiManager.setPlaceholders(eq(player), anyString())).thenAnswer(call -> {
-                assertTrue(inEntity.get(), "统计 PAPI 必须在实体线程解析");
-                return ((String) call.getArgument(1)).replace("%statistic_mine_block%", "12")
-                        .replace("%statistic_craft_item%", "3").replace("%custom_world%", "world");
-            });
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(), true)) {
+            scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenAnswer(call ->
+                    CompletableFuture.supplyAsync(() -> {
+                        offThread.set(Thread.currentThread() != caller);
+                        return ((Supplier<?>) call.getArgument(0)).get();
+                    }));
+            scheduler.when(() -> Scheduler.callTask(any(Supplier.class))).thenAnswer(call ->
+                    CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")))) {
                 service.onJoin(new PlayerJoinEvent(player, ""));
                 assertTrue(service.isOnline(uuid));
-                assertEquals("Alex", service.onlinePlayers().get(0).name());
-                assertThrows(UnsupportedOperationException.class, () -> service.onlinePlayers().clear());
-                CompletableFuture<PlayerSnapshotService.InfoSnapshot> capture = service.captureInfo(uuid, "Alex", "yesterday");
-                assertFalse(capture.isDone());
-                entityTasks.remove(0).run();
-                var snapshot = capture.get(5, TimeUnit.SECONDS);
+                assertEquals(List.of(new PlayerSnapshotService.OnlinePlayer(uuid, "Alex")), service.onlinePlayers());
+
+                var snapshot = service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS);
                 assertTrue(snapshot.online());
-                assertEquals("1分钟 2.50 m 12 3", snapshot.summary());
+                assertTrue(offThread.get(), "World JSON must be loaded off the game thread");
+                assertEquals("2分钟 5.00 m 20 20", snapshot.summary());
+                verify(player, never()).getStatistic(any(Statistic.class));
+                papi.verifyNoInteractions();
                 bukkit.verifyNoInteractions();
+
+                service.onQuit(new PlayerQuitEvent(player, ""));
+                assertFalse(service.isOnline(uuid));
+                assertEquals("2分钟 5.00 m 20 20",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+                verify(player, never()).getStatistic(any(Statistic.class));
+                assertFalse(Files.exists(directory.resolve("player-statistics-cache.json")));
             }
         }
     }
 
     @Test
-    void foliaOfflineUsesPersistedStatisticsWithoutCallingBukkitOrPapi() throws Exception {
+    void prefersOverworldJsonWhenNetherListedFirst() throws Exception {
         UUID uuid = UUID.randomUUID();
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(uuid);
-        when(player.getName()).thenReturn("Alex");
-        when(player.getStatistic(Statistic.PLAY_ONE_MINUTE)).thenReturn(2400);
-        when(player.getStatistic(Statistic.WALK_ONE_CM)).thenReturn(500);
+        save(uuid, JSON, true);
+        JavaPlugin plugin = plugin(directory.resolve("world"));
+        World nether = mock(World.class);
+        when(nether.getEnvironment()).thenReturn(World.Environment.NETHER);
+        World overworld = plugin.getServer().getWorlds().get(0);
+        when(plugin.getServer().getWorlds()).thenReturn(List.of(nether, overworld));
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class)) {
+            stubScheduler(scheduler);
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin)) {
+                assertEquals("2分钟 5.00 m 20 20",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            }
+        }
+    }
+
+    @Test
+    void absentJsonDoesNotUseOldCacheAndReportsAllStatisticsUnavailable() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        Files.writeString(directory.resolve("player-statistics-cache.json"),
+                "{\"" + uuid + "\":{\"playedTicks\":2400,\"walkedCentimeters\":99999}}");
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class)) {
+            stubScheduler(scheduler);
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")))) {
+                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            }
+        }
+        assertTrue(Files.readString(directory.resolve("player-statistics-cache.json")).contains("99999"),
+                "Legacy cache is left untouched, not read and not deleted");
+    }
+
+    @Test
+    void validJsonWithoutCategoriesMeansZeroRatherThanUnavailable() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        save(uuid, "{\"stats\":{}}", true);
+        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class)) {
+            stubScheduler(scheduler);
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")))) {
+                assertEquals("0分钟 0cm 0 0",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+            }
+        }
+    }
+
+    @Test
+    void damagedJsonDoesNotCrashAndDoesNotFallBackToPapi() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        Path file = save(uuid, "{truncated", true);
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
              MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class);
-             MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
-            try (PlayerSnapshotService first = new PlayerSnapshotService(plugin(), true)) {
-                first.onJoin(new PlayerJoinEvent(player, ""));
-                first.onQuit(new PlayerQuitEvent(player, ""));
-                assertFalse(first.isOnline(uuid));
-            }
-            assertTrue(Files.exists(directory.resolve("player-statistics-cache.json")));
-            try (PlayerSnapshotService reloaded = new PlayerSnapshotService(plugin(), true)) {
-                var snapshot = reloaded.captureInfo(uuid, "Alex", "yesterday")
-                        .get(5, TimeUnit.SECONDS);
-                assertFalse(snapshot.online());
-                assertEquals("2分钟 5.00 m 暂不可用 暂不可用", snapshot.summary());
-                var unknown = reloaded.captureInfo(UUID.randomUUID(), "Other", "yesterday")
-                        .get(5, TimeUnit.SECONDS);
-                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用", unknown.summary());
-                bukkit.verifyNoInteractions();
-                papi.verifyNoInteractions();
-            }
-        }
-    }
-
-    @Test
-    void corruptWorldFileFallsBackToExistingStatisticsWithoutFailingInfo() throws Exception {
-        UUID uuid = UUID.randomUUID();
-        Path mainWorld = directory.resolve("world");
-        Files.createDirectories(mainWorld.resolve("stats"));
-        Files.writeString(mainWorld.resolve("stats").resolve(uuid + ".json"), "{truncated");
-        JavaPlugin plugin = plugin();
-        World world = mock(World.class);
-        when(world.getWorldFolder()).thenReturn(mainWorld.toFile());
-        when(plugin.getServer().getWorlds()).thenReturn(List.of(world));
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(uuid);
-        when(player.getStatistic(Statistic.PLAY_ONE_MINUTE)).thenReturn(2400);
-        when(player.getStatistic(Statistic.WALK_ONE_CM)).thenReturn(500);
-        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
              MockedStatic<XLogger> logger = mockStatic(XLogger.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
+            stubScheduler(scheduler);
+            // Keep the error-path logger verification on this test thread:
+            // Mockito static mocks are thread-scoped. Other tests assert async IO.
             scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenAnswer(call ->
                     CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin, true)) {
-                service.onQuit(new PlayerQuitEvent(player, ""));
-                assertEquals("2分钟 5.00 m 暂不可用 暂不可用", service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
-                logger.verify(() -> XLogger.warn(eq("读取玩家 {0} 的存档统计失败，尝试使用缓存: {1}"),
+            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")))) {
+                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用",
+                        service.captureInfo(uuid, "Alex", "yesterday").get(5, TimeUnit.SECONDS).summary());
+                logger.verify(() -> XLogger.warn(eq("读取玩家 {0} 的存档统计失败: {1}"),
                         eq(uuid), anyString()));
-                assertEquals("{truncated", Files.readString(mainWorld.resolve("stats").resolve(uuid + ".json")));
+                papi.verifyNoInteractions();
+                assertEquals("{truncated", Files.readString(file));
             }
         }
     }
 
     @Test
-    void paperOfflineStatisticsAndPapiUseTheGlobalScheduler() throws Exception {
+    void shutdownCancelsPendingJsonQueries() throws Exception {
         UUID uuid = UUID.randomUUID();
-        OfflinePlayer player = mock(OfflinePlayer.class);
-        AtomicBoolean inGlobal = new AtomicBoolean();
-        when(player.getStatistic(any(Statistic.class))).thenAnswer(call -> {
-            assertTrue(inGlobal.get());
-            return 1200;
-        });
-        try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class);
-             MockedStatic<PlaceHolderApiManager> papi = mockStatic(PlaceHolderApiManager.class);
-             MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            directGlobalTasks(scheduler, inGlobal);
-            bukkit.when(() -> Bukkit.getOfflinePlayer(uuid)).thenAnswer(call -> {
-                assertTrue(inGlobal.get());
-                return player;
-            });
-            papi.when(() -> PlaceHolderApiManager.setPlaceholders(eq(player), anyString())).thenAnswer(call -> {
-                assertTrue(inGlobal.get());
-                return ((String) call.getArgument(1)).replace("%custom_rank%", "VIP");
-            });
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(), false)) {
-                var snapshot = service.captureInfo(uuid, "Alex", "yesterday")
-                        .get(5, TimeUnit.SECONDS);
-                assertEquals("1分钟 12.00 m 暂不可用 暂不可用", snapshot.summary());
-                assertFalse(snapshot.online());
-            }
-        }
-    }
-
-    @Test
-    void retiredEntityFallsBackAndDisableCompletesPendingCaptures() throws Exception {
-        UUID uuid = UUID.randomUUID();
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(uuid);
-        when(player.getName()).thenReturn("Alex");
         try (MockedStatic<Scheduler> scheduler = mockStatic(Scheduler.class)) {
-            directGlobalTasks(scheduler, new AtomicBoolean());
-            CompletableFuture<Object> retired = new CompletableFuture<>();
-            scheduler.when(() -> Scheduler.callTask(eq(player), any(Supplier.class))).thenReturn(retired);
-            try (PlayerSnapshotService service = new PlayerSnapshotService(plugin(), true)) {
-                service.onJoin(new PlayerJoinEvent(player, ""));
-                var capture = service.captureInfo(uuid, "Alex", "yesterday");
-                retired.completeExceptionally(new Scheduler.PlayerUnavailableException());
-                assertEquals("暂不可用 暂不可用 暂不可用 暂不可用", capture.get(5, TimeUnit.SECONDS).summary());
-                CompletableFuture<Object> stalled = new CompletableFuture<>();
-                scheduler.when(() -> Scheduler.callTask(eq(player), any(Supplier.class))).thenReturn(stalled);
-                var pending = service.captureInfo(uuid, "Alex", "yesterday");
-                service.close();
-                assertTrue(pending.isCancelled());
-            }
+            scheduler.when(() -> Scheduler.callTask(any(Supplier.class))).thenAnswer(call ->
+                    CompletableFuture.completedFuture(((Supplier<?>) call.getArgument(0)).get()));
+            CompletableFuture<PlayerSnapshotService.InfoSnapshot> stalled = new CompletableFuture<>();
+            scheduler.when(() -> Scheduler.callTaskAsync(any(Supplier.class))).thenReturn(stalled);
+            PlayerSnapshotService service = new PlayerSnapshotService(plugin(directory.resolve("world")));
+            CompletableFuture<PlayerSnapshotService.InfoSnapshot> pending = service.captureInfo(uuid, "Alex", "yesterday");
+            service.close();
+            assertTrue(pending.isCancelled());
+            assertTrue(service.captureInfo(uuid, "Alex", "yesterday").isCompletedExceptionally());
         }
+    }
+
+    private PlayerSnapshotService create(JavaPlugin plugin, MockedStatic<Scheduler> scheduler) {
+        stubScheduler(scheduler);
+        return new PlayerSnapshotService(plugin);
     }
 }
