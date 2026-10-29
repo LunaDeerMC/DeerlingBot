@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import cn.lunadeer.mc.deerlingbot.utils.scheduler.Scheduler;
+import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -51,9 +52,13 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
 
     public record OnlinePlayer(UUID uuid, String name) { }
 
-    /** Immutable display values; only name/presence are not from stats JSON. */
+    /** Immutable statistics and profile; name, presence and last login come from separate metadata. */
     public record InfoSnapshot(boolean online, String name, String lastJoin,
-                               String time, String walk, String mined, String crafted) {
+                               String time, String walk, String mined, String crafted, PlayerCardProfile profile) {
+        public InfoSnapshot(boolean online, String name, String lastJoin,
+                            String time, String walk, String mined, String crafted) {
+            this(online, name, lastJoin, time, walk, mined, crafted, null);
+        }
         public String summary() { return String.join(" ", time, walk, mined, crafted); }
     }
 
@@ -138,13 +143,14 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
         if (closed) return CompletableFuture.failedFuture(new CancellationException("玩家快照服务已关闭"));
         // This is a thread-safe presence snapshot, not a Bukkit player-statistics query.
         boolean currentlyOnline = online.containsKey(uuid);
+        AchievementThresholds thresholds = Configuration.achievementThresholdSnapshot();
         CompletableFuture<InfoSnapshot> capture = Scheduler.callTaskAsync(() -> {
             if (closed) throw new CancellationException("玩家快照服务已关闭");
             List<Path> roots = WorldStatisticsReader.resolveWorldRoots(serverRoot, worldRoots);
             for (Path root : roots) {
                 WorldStatisticsReader.Statistics data;
                 try {
-                    data = WorldStatisticsReader.readFromWorld(root, uuid);
+                    data = WorldStatisticsReader.readFromWorld(root, uuid, thresholds);
                 } catch (IOException error) {
                     // An unusable candidate must not prevent trying the
                     // configured world directory.
@@ -161,7 +167,7 @@ public final class PlayerSnapshotService implements Listener, AutoCloseable {
                             timeConverter(data.playedTicks()),
                             distanceConverter(data.walkedCentimeters()),
                             decimalConverter(data.minedBlocks()),
-                            decimalConverter(data.craftedItems()));
+                            decimalConverter(data.craftedItems()), data.profile());
                 }
             }
             if (logger != null && loggedMissingStats.compareAndSet(false, true)) {

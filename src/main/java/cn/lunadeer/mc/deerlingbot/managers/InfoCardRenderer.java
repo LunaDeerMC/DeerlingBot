@@ -42,6 +42,9 @@ public final class InfoCardRenderer {
 
     public BufferedImage render(PlayerSnapshotService.InfoSnapshot snapshot, BufferedImage avatar) {
         if (snapshot == null) throw new IllegalArgumentException("snapshot must not be null");
+        if (snapshot.profile() != null) {
+            return new PlayerProfileCardRenderer().render(snapshot, avatar, officialLogo);
+        }
         BufferedImage out = new BufferedImage(W * SCALE, H * SCALE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = out.createGraphics();
         try {

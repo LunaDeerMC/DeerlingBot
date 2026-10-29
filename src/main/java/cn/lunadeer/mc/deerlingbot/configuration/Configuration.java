@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot.configuration;
 
 import cn.lunadeer.mc.deerlingbot.utils.configuration.*;
+import cn.lunadeer.mc.deerlingbot.managers.AchievementThresholds;
 
 import java.util.List;
 
@@ -49,6 +50,30 @@ public class Configuration extends ConfigurationFile {
             "使用内置 Java2D 绘图，无需下载浏览器或模板",
     })
     public static boolean fancyCommand = false;
+
+    @Comments({
+            "玩家信息图片的六类成就累计门槛；每类必须满足 0 < bronze < silver < gold",
+            "elytra、walking 使用整数公里 km；其余使用累计数量或次数",
+            "修改后使用 /deerling reload 生效；降低或提高门槛会重新计算已有玩家的等级",
+    })
+    public static AchievementThresholdConfiguration achievementThresholds = new AchievementThresholdConfiguration();
+
+    private static volatile AchievementThresholds activeAchievementThresholds = AchievementThresholds.defaults();
+    private AchievementThresholds preparedAchievementThresholds;
+
+    public static AchievementThresholds achievementThresholdSnapshot() { return activeAchievementThresholds; }
+
+    @PreProcess
+    public void prepareAchievementThresholds() {
+        preparedAchievementThresholds = AchievementThresholdConfiguration.read(getYaml());
+        // Missing fields must use factory defaults, not stale values from a previous reload.
+        achievementThresholds = new AchievementThresholdConfiguration();
+    }
+
+    @PostProcess
+    public void publishAchievementThresholds() {
+        activeAchievementThresholds = java.util.Objects.requireNonNull(preparedAchievementThresholds, "validated achievement thresholds");
+    }
 
     @Comments({
             "机器人接收指令的群聊列表",

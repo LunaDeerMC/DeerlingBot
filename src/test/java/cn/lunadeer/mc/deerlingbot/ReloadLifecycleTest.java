@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot;
 
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
+import cn.lunadeer.mc.deerlingbot.configuration.AchievementThresholdConfiguration;
 import cn.lunadeer.mc.deerlingbot.managers.*;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
 import cn.lunadeer.mc.deerlingbot.utils.Notification;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -108,6 +110,23 @@ class ReloadLifecycleTest {
                     cn.lunadeer.mc.deerlingbot.utils.command.CommandManager::getInstance);
         } finally {
             cn.lunadeer.mc.deerlingbot.utils.command.CommandManager.close();
+        }
+    }
+
+    @Test
+    void invalidAchievementThresholdsRejectReloadWithoutDisablingTheRunningPlugin() throws Exception {
+        DeerlingBot plugin = mock(DeerlingBot.class, CALLS_REAL_METHODS);
+        Server server = mock(Server.class);
+        PluginManager plugins = mock(PluginManager.class);
+        doReturn(directory.toFile()).when(plugin).getDataFolder();
+        doReturn(server).when(plugin).getServer();
+        when(server.getPluginManager()).thenReturn(plugins);
+        Files.writeString(directory.resolve("config.yml"), "achievement-thresholds:\n  fishing: {bronze: -1}\n");
+        AchievementThresholds snapshot = Configuration.achievementThresholdSnapshot();
+        try (var logs = mockStatic(XLogger.class)) {
+            assertThrows(AchievementThresholdConfiguration.InvalidThresholds.class, plugin::reloadConfiguration);
+            assertSame(snapshot, Configuration.achievementThresholdSnapshot());
+            verify(plugins, never()).disablePlugin(any());
         }
     }
 

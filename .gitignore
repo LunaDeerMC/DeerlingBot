@@ -110,6 +110,10 @@ gradle-app.setting
 # Cache of project
 .gradletasknamecache
 
+# Local Python analysis caches
+__pycache__/
+*.py[cod]
+
 **/build/
 
 # Common working directory

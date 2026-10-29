@@ -1,6 +1,7 @@
 package cn.lunadeer.mc.deerlingbot;
 
 import cn.lunadeer.mc.deerlingbot.configuration.Configuration;
+import cn.lunadeer.mc.deerlingbot.configuration.AchievementThresholdConfiguration;
 import cn.lunadeer.mc.deerlingbot.configuration.MessageText;
 import cn.lunadeer.mc.deerlingbot.managers.*;
 import cn.lunadeer.mc.deerlingbot.tables.WhitelistTable;
@@ -142,6 +143,12 @@ public final class DeerlingBot extends JavaPlugin {
             return databaseRestartRequired;
         } catch (Exception e) {
             XLogger.error(e);
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof AchievementThresholdConfiguration.InvalidThresholds invalid) {
+                    // Achievement validation runs before any live setting is changed.
+                    throw invalid;
+                }
+            }
             getServer().getPluginManager().disablePlugin(this);
             throw e;
         }

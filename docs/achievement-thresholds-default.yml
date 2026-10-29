@@ -1,0 +1,29 @@
+# Default cumulative thresholds calibrated on 2026-10-30 (Asia/Shanghai).
+# Bronze thresholds moderately raised after owner feedback and re-evaluated.
+# The plugin generates this section in config.yml; reload with /deerling reload.
+# Distances (elytra, walking) use whole kilometres. Other values are counts.
+achievement-thresholds:
+  mining:
+    bronze: 500
+    silver: 36000
+    gold: 680000
+  crafting:
+    bronze: 300
+    silver: 31000
+    gold: 1200000
+  elytra:
+    bronze: 8
+    silver: 360
+    gold: 5100
+  fishing:
+    bronze: 5
+    silver: 98
+    gold: 1100
+  trading:
+    bronze: 25
+    silver: 390
+    gold: 18000
+  walking:
+    bronze: 5
+    silver: 120
+    gold: 1500

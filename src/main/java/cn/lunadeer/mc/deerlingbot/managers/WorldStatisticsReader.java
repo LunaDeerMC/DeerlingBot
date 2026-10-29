@@ -18,17 +18,26 @@ import java.util.UUID;
 final class WorldStatisticsReader {
     private static final int MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-    record Statistics(int playedTicks, int walkedCentimeters, long minedBlocks, long craftedItems) { }
+    record Statistics(int playedTicks, int walkedCentimeters, long minedBlocks, long craftedItems,
+                      PlayerCardProfile profile) {
+        Statistics(int playedTicks, int walkedCentimeters, long minedBlocks, long craftedItems) {
+            this(playedTicks, walkedCentimeters, minedBlocks, craftedItems, null);
+        }
+    }
 
     /**
      * Paper / vanilla saves statistics in world/stats; DeerFoliaPlus also supports
      * world/players/stats. Prefer the normal path when a player's file exists
-     * there, then try the alternative before falling back to the plugin cache.
+     * there, then try the alternative. Missing statistics remain unavailable.
      */
     static Statistics readFromWorld(Path worldDirectory, UUID uuid) throws IOException {
+        return readFromWorld(worldDirectory, uuid, AchievementThresholds.defaults());
+    }
+
+    static Statistics readFromWorld(Path worldDirectory, UUID uuid, AchievementThresholds thresholds) throws IOException {
         if (worldDirectory == null) return null;
-        Statistics normal = read(worldDirectory.resolve("stats"), uuid);
-        return normal != null ? normal : read(worldDirectory.resolve("players").resolve("stats"), uuid);
+        Statistics normal = read(worldDirectory.resolve("stats"), uuid, thresholds);
+        return normal != null ? normal : read(worldDirectory.resolve("players").resolve("stats"), uuid, thresholds);
     }
 
     /**
@@ -62,6 +71,10 @@ final class WorldStatisticsReader {
     }
 
     static Statistics read(Path directory, UUID uuid) throws IOException {
+        return read(directory, uuid, AchievementThresholds.defaults());
+    }
+
+    static Statistics read(Path directory, UUID uuid, AchievementThresholds thresholds) throws IOException {
         if (directory == null) return null;
         Path file = directory.resolve(uuid + ".json");
         byte[] bytes;
@@ -80,7 +93,8 @@ final class WorldStatisticsReader {
             String playKey = custom != null && custom.containsKey("minecraft:play_time")
                     ? "minecraft:play_time" : "minecraft:play_one_minute";
             return new Statistics(value(custom, playKey), value(custom, "minecraft:walk_one_cm"),
-                    total(stats.getJSONObject("minecraft:mined")), total(stats.getJSONObject("minecraft:crafted")));
+                    total(stats.getJSONObject("minecraft:mined")), total(stats.getJSONObject("minecraft:crafted")),
+                    PlayerCardProfile.fromJson(root, thresholds));
         } catch (RuntimeException e) {
             throw new IOException("无法解析统计文件 " + file, e);
         }

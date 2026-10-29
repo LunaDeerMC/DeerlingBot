@@ -20,7 +20,7 @@ libraries += "com.alibaba:fastjson:2.0.31"
 var suffixes = getAndIncrementVersion()
 
 group = "cn.lunadeer.mc"
-version = "2.3-$suffixes"
+version = "2.3.1-$suffixes"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
@@ -100,6 +100,22 @@ tasks.shadowJar {
 tasks.register("Clean&Build") { // <<<< RUN THIS TASK TO BUILD PLUGIN
     dependsOn(tasks.clean)
     dependsOn(tasks.shadowJar)
+}
+
+tasks.register<JavaExec>("previewInfoCard") {
+    group = "verification"
+    description = "Render a player card locally from saved statistics, without starting Minecraft."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("cn.lunadeer.mc.deerlingbot.managers.InfoCardPreview")
+    systemProperty("java.awt.headless", "true")
+    doFirst {
+        args(providers.gradleProperty("preview-stats").get(),
+            providers.gradleProperty("preview-avatar").getOrElse("-"),
+            providers.gradleProperty("preview-name").get(),
+            providers.gradleProperty("preview-last-join").getOrElse("暂不可用"),
+            providers.gradleProperty("preview-output").get())
+    }
 }
 
 // Function to get current git branch

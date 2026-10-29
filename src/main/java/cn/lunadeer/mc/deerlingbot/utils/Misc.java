@@ -112,10 +112,10 @@ public class Misc {
             return cm + "cm";
         } else if (cm < 100000) {
             return String.format("%.2f", cm / 100.0) + " m";
-        } else if (cm < 100000000) {
+        } else if (cm < 1000000000) {
             return String.format("%.2f", cm / 100000.0) + " km";
         } else {
-            return String.format("%.2f", cm / 100000000.0) + " 万km";
+            return String.format("%.2f", cm / 1000000000.0) + " 万km";
         }
     }
 

@@ -1,5 +1,6 @@
 package cn.lunadeer.mc.deerlingbot;
 
+import cn.lunadeer.mc.deerlingbot.configuration.AchievementThresholdConfiguration;
 import cn.lunadeer.mc.deerlingbot.utils.Notification;
 import cn.lunadeer.mc.deerlingbot.utils.command.CommandManager;
 import cn.lunadeer.mc.deerlingbot.utils.command.SecondaryCommand;
@@ -25,6 +26,8 @@ public class BukkitCommand {
                 if (databaseRestartRequired) {
                     Notification.warn(sender, "数据库连接配置已保存，重启服务器后生效；当前继续使用原数据库。");
                 }
+            } catch (AchievementThresholdConfiguration.InvalidThresholds e) {
+                sender.sendMessage("成就门槛配置无效，未应用本次重载，继续使用原配置：" + e.getMessage());
             } catch (Exception e) {
                 sender.sendMessage("配置重载失败，插件已停用，请检查控制台日志。");
             }
