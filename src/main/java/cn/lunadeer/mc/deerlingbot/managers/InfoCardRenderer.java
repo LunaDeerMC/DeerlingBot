@@ -134,7 +134,7 @@ public final class InfoCardRenderer {
         int iconX = 62, iconY = top + 5;
         g.setColor(SOFT_PINK);
         g.fillRoundRect(iconX, iconY, 36, 36, 12, 12);
-        drawIcon(g, type, iconX + 7, iconY + 7);
+        StatisticsIconComponent.draw(g, type, iconX + 3, iconY + 3, 30);
         g.setColor(c("#5E6674"));
         g.setFont(font(CJK, Font.PLAIN, 13));
         g.drawString(label, 112, top + 29);
@@ -152,72 +152,6 @@ public final class InfoCardRenderer {
             g.setStroke(new BasicStroke(0.9f));
             g.draw(new Line2D.Float(112, top + 51, 420, top + 51));
         }
-    }
-
-    // All four icons use the same 24x24 viewbox, line thickness, and cap geometry.
-    static void drawIcon(Graphics2D g, int type, int ox, int oy) {
-        Graphics2D i = (Graphics2D) g.create();
-        i.translate(ox, oy);
-        i.setColor(PINK);
-        i.setStroke(new BasicStroke(1.85f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        switch (type) {
-            case 0 -> { // clock
-                i.draw(new Ellipse2D.Float(3.0f, 3.0f, 18, 18));
-                i.draw(new Line2D.Float(12, 7, 12, 12));
-                i.draw(new Line2D.Float(12, 12, 15.5f, 14.1f));
-            }
-            case 1 -> { // map route, more legible than a stick-figure runner
-                i.draw(new Ellipse2D.Float(3.0f, 15.8f, 4.3f, 4.3f));
-                i.draw(new Ellipse2D.Float(16.7f, 3.6f, 4.3f, 4.3f));
-                Path2D p = new Path2D.Float();
-                p.moveTo(6, 15.7);
-                p.curveTo(8, 9.7, 17, 17, 18.6, 8.0);
-                i.draw(p);
-            }
-            case 2 -> { // ordinary, clean vector pickaxe (not pixel art)
-                // Angle the crosshead so it reads as a real pickaxe rather than a parasol.
-                i.rotate(Math.toRadians(-32), 12, 12);
-                // A long diagonal handle attached to an asymmetric metal head.
-                // The slanted crosspiece (rather than a symmetric arch) avoids
-                // making the tool look like an umbrella.
-                Path2D.Float handle = new Path2D.Float();
-                handle.moveTo(11.2f, 4.9f);
-                handle.lineTo(14.0f, 6.6f);
-                handle.lineTo(8.5f, 21.2f);
-                handle.quadTo(8.0f, 21.9f, 7.3f, 21.5f);
-                handle.lineTo(5.3f, 20.4f);
-                handle.quadTo(4.9f, 20.1f, 5.3f, 19.4f);
-                handle.closePath();
-                i.fill(handle);
-
-                // Long pointed left pick, reinforced right heel and visible
-                // broad socket around where the wooden grip joins the head.
-                Path2D.Float head = new Path2D.Float();
-                head.moveTo(1.9f, 6.0f);
-                head.curveTo(8.4f, 3.2f, 13.4f, 3.3f, 17.0f, 5.0f);
-                head.curveTo(19.5f, 6.2f, 20.8f, 8.1f, 22.1f, 11.0f);
-                head.lineTo(18.7f, 9.4f);
-                head.curveTo(16.6f, 7.6f, 12.8f, 6.9f, 9.7f, 7.1f);
-                head.curveTo(7.0f, 7.2f, 4.6f, 8.0f, 2.1f, 9.4f);
-                head.lineTo(1.9f, 6.0f);
-                head.closePath();
-                i.fill(head);
-                // Slim highlight along the metal edge: clearly a tool head.
-                i.setColor(c("#EFA1C1"));
-                i.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                i.draw(new Line2D.Float(7.8f, 5.1f, 15.5f, 5.2f));
-            }
-            case 3 -> { // isometric crafting cube
-                Path2D p = new Path2D.Float();
-                p.moveTo(12, 2.8); p.lineTo(20, 7.2); p.lineTo(20, 16.7);
-                p.lineTo(12, 21); p.lineTo(4, 16.7); p.lineTo(4, 7.2);
-                p.closePath();
-                p.moveTo(4.5, 7.3); p.lineTo(12, 11.7); p.lineTo(19.5, 7.3);
-                p.moveTo(12, 11.7); p.lineTo(12, 20.5);
-                i.draw(p);
-            }
-        }
-        i.dispose();
     }
 
     static void drawAvatar(Graphics2D g, BufferedImage actual, int x, int y, int size) {

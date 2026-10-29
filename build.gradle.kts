@@ -20,7 +20,7 @@ libraries += "com.alibaba:fastjson:2.0.31"
 var suffixes = getAndIncrementVersion()
 
 group = "cn.lunadeer.mc"
-version = "2.3.1-$suffixes"
+version = "2.3.2-$suffixes"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
