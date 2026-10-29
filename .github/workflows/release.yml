@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify tag
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9.-]+)?$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Test and build Lite
+        run: |
+          gradle --no-daemon clean test shadowJar
+          mkdir -p release
+          cp build/libs/*-lite.jar release/
+
+      - name: Build Full
+        run: |
+          gradle --no-daemon -PBuildFull=true shadowJar
+          cp build/libs/*-full.jar release/
+
+      - name: Verify packages and write checksums
+        shell: python
+        run: |
+          import hashlib
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+          import zipfile
+          from pathlib import Path
+
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          checksums = []
+          for kind in ('lite', 'full'):
+              jar = Path('release') / f'DeerlingBot-{version}-{kind}.jar'
+              with zipfile.ZipFile(jar) as archive:
+                  assert archive.testzip() is None, f'Corrupt archive: {jar}'
+                  descriptor = archive.read('plugin.yml').decode()
+                  declared = re.search(r'^version:\s*(.+)$', descriptor, re.M)
+                  assert declared and declared.group(1).strip("\"'") == version, f'Version mismatch: {jar}'
+              with jar.open('rb') as source:
+                  digest = hashlib.file_digest(source, 'sha256').hexdigest()
+              checksums.append(f'{digest}  {jar.name}\n')
+          Path('release/SHA256SUMS.txt').write_text(''.join(checksums))
+          totals = {key: 0 for key in ('tests', 'failures', 'errors', 'skipped')}
+          for report in Path('build/test-results/test').glob('TEST-*.xml'):
+              suite = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(suite.attrib.get(key, 0))
+          assert totals['tests'] > 0 and totals['failures'] == totals['errors'] == 0, totals
+          print(f'Test results: {totals}')
+          print(Path('release/SHA256SUMS.txt').read_text())
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+            test "$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')" = 0
+          else
+            gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes --title "DeerlingBot ${RELEASE_TAG#v}"
+          fi
+          gh release upload "$RELEASE_TAG" release/*
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false
+          fi
