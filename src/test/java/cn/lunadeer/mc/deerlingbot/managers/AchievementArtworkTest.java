@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AchievementArtworkTest {
     @Test
-    void nineSharedComponentsAreTransparentAndLoadedOnlyOnce() {
+    void elevenSharedComponentsAreTransparentAndLoadedOnlyOnce() {
         Set<BufferedImage> decoded = new HashSet<>();
         for (String level : AchievementArtwork.LEVELS.keySet()) {
             BufferedImage frame = AchievementArtwork.frame(level);
@@ -24,12 +24,12 @@ class AchievementArtworkTest {
             assertValid(content, "content / " + icon);
             decoded.add(content);
         }
-        assertEquals(9, decoded.size());
+        assertEquals(11, decoded.size());
     }
 
     @Test
     void lockedVariantsAreFixedGrayscaleImagesWithOriginalAlpha() {
-        assertSame(AchievementArtwork.frame("铜", true), AchievementArtwork.frame("未解锁", true));
+        assertSame(AchievementArtwork.frame("木", true), AchievementArtwork.frame("未解锁", true));
         BufferedImage source = AchievementArtwork.content("cube");
         BufferedImage gray = AchievementArtwork.content("cube", true);
         assertSame(gray, AchievementArtwork.content("cube", true));

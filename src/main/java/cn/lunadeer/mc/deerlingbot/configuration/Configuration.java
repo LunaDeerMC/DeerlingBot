@@ -52,7 +52,7 @@ public class Configuration extends ConfigurationFile {
     public static boolean fancyCommand = false;
 
     @Comments({
-            "玩家信息图片的六类成就累计门槛；每类必须满足 0 < bronze < silver < gold",
+            "玩家信息图片的六类成就累计门槛；每类必须满足 0 < wood < iron < copper < diamond < gold（木、铁、铜、钻、金）",
             "elytra、walking 使用整数公里 km；其余使用累计数量或次数",
             "修改后使用 /deerling reload 生效；降低或提高门槛会重新计算已有玩家的等级",
     })
@@ -66,6 +66,7 @@ public class Configuration extends ConfigurationFile {
     @PreProcess
     public void prepareAchievementThresholds() {
         preparedAchievementThresholds = AchievementThresholdConfiguration.read(getYaml());
+        AchievementThresholdConfiguration.normalizeLegacyYaml(getYaml(), preparedAchievementThresholds);
         // Missing fields must use factory defaults, not stale values from a previous reload.
         achievementThresholds = new AchievementThresholdConfiguration();
     }

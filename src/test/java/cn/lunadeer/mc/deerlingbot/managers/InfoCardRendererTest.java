@@ -68,6 +68,16 @@ class InfoCardRendererTest {
     }
 
     @Test
+    void bundledFontsCoverEveryFiveTierAchievementLabel() {
+        for (int style : new int[]{java.awt.Font.PLAIN, java.awt.Font.BOLD}) {
+            java.awt.Font face = InfoCardRenderer.font(InfoCardRenderer.CJK, style, 14);
+            for (char character : "木铁铜钻金未解锁".toCharArray()) {
+                assertTrue(face.canDisplay(character), "Missing achievement tier glyph: " + character);
+            }
+        }
+    }
+
+    @Test
     void offlineStatusCanBeRenderedWithoutBukkit() {
         PlayerSnapshotService.InfoSnapshot offline =
                 new PlayerSnapshotService.InfoSnapshot(false, "Alex", "昨天",

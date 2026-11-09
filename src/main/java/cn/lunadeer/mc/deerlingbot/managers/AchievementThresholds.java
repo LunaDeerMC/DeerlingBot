@@ -8,16 +8,16 @@ public record AchievementThresholds(Tiers mining, Tiers crafting, Tiers elytra,
     public static final long CENTIMETERS_PER_KILOMETER = 100_000;
     public static final long MAX_DISTANCE_KILOMETERS = Integer.MAX_VALUE / CENTIMETERS_PER_KILOMETER;
 
-    // Calibrated from 1,796 saved player records on 2026-10-30 (Asia/Shanghai),
-    // then moderately raised bronze thresholds following the owner's feedback.
+    // Calibrated from 1,809 saved player records on 2026-11-09 (Asia/Shanghai).
+    // Wood retains the previously tuned entry floor; higher tiers use playtime cohorts.
     // The offline method and cohort checks are documented in docs/achievement-calibration-status.md.
     private static final AchievementThresholds DEFAULTS = new AchievementThresholds(
-            new Tiers(500, 36_000, 680_000),
-            new Tiers(300, 31_000, 1_200_000),
-            Tiers.kilometers(8, 360, 5_100),
-            new Tiers(5, 98, 1_100),
-            new Tiers(25, 390, 18_000),
-            Tiers.kilometers(5, 120, 1_500));
+            new Tiers(550, 10_000, 36_000, 190_000, 1_300_000),
+            new Tiers(340, 8_300, 31_000, 260_000, 2_100_000),
+            Tiers.kilometers(10, 110, 370, 1_700, 6_900),
+            new Tiers(5, 19, 98, 280, 1_800),
+            new Tiers(27, 150, 390, 5_100, 31_000),
+            Tiers.kilometers(5, 44, 120, 480, 2_000));
 
     public AchievementThresholds {
         Objects.requireNonNull(mining, "mining");
@@ -36,20 +36,22 @@ public record AchievementThresholds(Tiers mining, Tiers crafting, Tiers elytra,
             throw new IllegalArgumentException(category + " thresholds exceed the vanilla statistic limit");
     }
 
-    public record Tiers(long bronze, long silver, long gold) {
+    public record Tiers(long wood, long iron, long copper, long diamond, long gold) {
         public Tiers {
-            if (bronze <= 0 || silver <= bronze || gold <= silver)
-                throw new IllegalArgumentException("Thresholds must be positive integers with bronze < silver < gold");
+            if (wood <= 0 || iron <= wood || copper <= iron || diamond <= copper || gold <= diamond)
+                throw new IllegalArgumentException("Thresholds must be positive integers with wood < iron < copper < diamond < gold");
         }
 
-        public static Tiers kilometers(long bronze, long silver, long gold) {
+        public static Tiers kilometers(long wood, long iron, long copper, long diamond, long gold) {
             if (gold > MAX_DISTANCE_KILOMETERS)
                 throw new IllegalArgumentException("Distance thresholds cannot exceed " + MAX_DISTANCE_KILOMETERS + " km");
-            return new Tiers(Math.multiplyExact(bronze, CENTIMETERS_PER_KILOMETER),
-                    Math.multiplyExact(silver, CENTIMETERS_PER_KILOMETER),
+            return new Tiers(Math.multiplyExact(wood, CENTIMETERS_PER_KILOMETER),
+                    Math.multiplyExact(iron, CENTIMETERS_PER_KILOMETER),
+                    Math.multiplyExact(copper, CENTIMETERS_PER_KILOMETER),
+                    Math.multiplyExact(diamond, CENTIMETERS_PER_KILOMETER),
                     Math.multiplyExact(gold, CENTIMETERS_PER_KILOMETER));
         }
 
-        public long[] values() { return new long[]{bronze, silver, gold}; }
+        public long[] values() { return new long[]{wood, iron, copper, diamond, gold}; }
     }
 }

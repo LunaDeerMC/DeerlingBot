@@ -95,10 +95,10 @@ class WorldStatisticsReaderTest {
         write("{\"stats\":{\"minecraft:custom\":{\"minecraft:traded_with_villager\":15}}}");
         AchievementThresholds defaults = AchievementThresholds.defaults();
         AchievementThresholds custom = new AchievementThresholds(defaults.mining(), defaults.crafting(), defaults.elytra(),
-                defaults.fishing(), new AchievementThresholds.Tiers(5, 10, 20), defaults.walking());
+                defaults.fishing(), new AchievementThresholds.Tiers(5, 10, 20, 30, 40), defaults.walking());
         PlayerCardProfile profile = WorldStatisticsReader.read(directory, uuid, custom).profile();
         PlayerCardProfile.Achievement trade = profile.achievements().stream().filter(b -> b.icon().equals("trade")).findFirst().orElseThrow();
-        assertEquals("银", trade.level());
+        assertEquals("铁", trade.level());
         assertEquals("50%", trade.progressPercentText());
         assertEquals(5, trade.litSegments());
     }

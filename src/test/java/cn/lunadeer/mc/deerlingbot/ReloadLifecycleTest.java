@@ -121,7 +121,7 @@ class ReloadLifecycleTest {
         doReturn(directory.toFile()).when(plugin).getDataFolder();
         doReturn(server).when(plugin).getServer();
         when(server.getPluginManager()).thenReturn(plugins);
-        Files.writeString(directory.resolve("config.yml"), "achievement-thresholds:\n  fishing: {bronze: -1}\n");
+        Files.writeString(directory.resolve("config.yml"), "achievement-thresholds:\n  fishing: {wood: -1}\n");
         AchievementThresholds snapshot = Configuration.achievementThresholdSnapshot();
         try (var logs = mockStatic(XLogger.class)) {
             assertThrows(AchievementThresholdConfiguration.InvalidThresholds.class, plugin::reloadConfiguration);

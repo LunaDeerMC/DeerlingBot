@@ -1,29 +1,41 @@
-# Default cumulative thresholds calibrated on 2026-10-30 (Asia/Shanghai).
-# Bronze thresholds moderately raised after owner feedback and re-evaluated.
+# Default cumulative thresholds calibrated on 2026-11-09 (Asia/Shanghai).
+# Order: wood, iron, copper, diamond, gold.
 # The plugin generates this section in config.yml; reload with /deerling reload.
 # Distances (elytra, walking) use whole kilometres. Other values are counts.
 achievement-thresholds:
   mining:
-    bronze: 500
-    silver: 36000
-    gold: 680000
+    wood: 550
+    iron: 10000
+    copper: 36000
+    diamond: 190000
+    gold: 1300000
   crafting:
-    bronze: 300
-    silver: 31000
-    gold: 1200000
+    wood: 340
+    iron: 8300
+    copper: 31000
+    diamond: 260000
+    gold: 2100000
   elytra:
-    bronze: 8
-    silver: 360
-    gold: 5100
+    wood: 10
+    iron: 110
+    copper: 370
+    diamond: 1700
+    gold: 6900
   fishing:
-    bronze: 5
-    silver: 98
-    gold: 1100
+    wood: 5
+    iron: 19
+    copper: 98
+    diamond: 280
+    gold: 1800
   trading:
-    bronze: 25
-    silver: 390
-    gold: 18000
+    wood: 27
+    iron: 150
+    copper: 390
+    diamond: 5100
+    gold: 31000
   walking:
-    bronze: 5
-    silver: 120
-    gold: 1500
+    wood: 5
+    iron: 44
+    copper: 120
+    diamond: 480
+    gold: 2000

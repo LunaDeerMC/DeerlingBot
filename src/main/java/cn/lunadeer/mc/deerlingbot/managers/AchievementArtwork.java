@@ -1,6 +1,8 @@
 package cn.lunadeer.mc.deerlingbot.managers;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -8,17 +10,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Nine shared PNG components, decoded once per plugin classloader, never once per player. */
+/** Eleven shared PNG components, decoded once per plugin classloader, never once per player. */
 final class AchievementArtwork {
     static final List<String> ICONS = List.of("pickaxe", "cube", "wing", "fish", "trade", "route");
-    static final Map<String, String> LEVELS = Map.of("铜", "bronze", "银", "silver", "金", "gold");
+    static final Map<String, String> LEVELS = Map.of("木", "wood", "铁", "iron", "铜", "copper", "钻", "diamond", "金", "gold");
 
     private AchievementArtwork() { }
 
     static BufferedImage frame(String level) { return frame(level, false); }
 
     static BufferedImage frame(String level, boolean muted) {
-        String tier = "未解锁".equals(level) ? "bronze" : LEVELS.get(level);
+        String tier = "未解锁".equals(level) ? "wood" : LEVELS.get(level);
         if (tier == null) throw new IllegalArgumentException("Unknown achievement level: " + level);
         return (muted ? Images.MUTED : Images.ALL).get("frame-" + tier);
     }
@@ -48,12 +50,29 @@ final class AchievementArtwork {
                 BufferedImage image = ImageIO.read(stream);
                 if (image == null) throw new IOException("Achievement component is not a readable PNG: " + resource);
                 if (!image.getColorModel().hasAlpha()) throw new IOException("Achievement component must have transparency: " + resource);
-                if (image.getWidth() > 512 || image.getHeight() > 512)
-                    throw new IOException("Achievement component exceeds the 512px asset budget: " + resource);
-                return image;
+                if (image.getWidth() > 2048 || image.getHeight() > 2048)
+                    throw new IOException("Achievement component exceeds the 2048px source asset budget: " + resource);
+                return fitCacheBudget(image);
             } catch (IOException e) {
                 throw new IllegalStateException("Cannot load player achievement component", e);
             }
+        }
+
+        /** Keep the approved source PNG intact; downsample only once for the shared render cache. */
+        private static BufferedImage fitCacheBudget(BufferedImage source) {
+            int longest = Math.max(source.getWidth(), source.getHeight());
+            if (longest <= 512) return source;
+            double scale = 512.0 / longest;
+            BufferedImage result = new BufferedImage(Math.max(1, (int) Math.round(source.getWidth() * scale)),
+                    Math.max(1, (int) Math.round(source.getHeight() * scale)), BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = result.createGraphics();
+            try {
+                graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                graphics.drawImage(source, 0, 0, result.getWidth(), result.getHeight(), null);
+            } finally {
+                graphics.dispose();
+            }
+            return result;
         }
 
         private static Map<String, BufferedImage> mute(Map<String, BufferedImage> originals) {

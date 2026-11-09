@@ -10,12 +10,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class PlayerCardProfileTest {
     // Fixed test rules keep arithmetic examples independent of future server balancing changes.
     private static final AchievementThresholds TEST_THRESHOLDS = new AchievementThresholds(
-            new AchievementThresholds.Tiers(10_000, 100_000, 1_000_000),
-            new AchievementThresholds.Tiers(10_000, 100_000, 1_000_000),
-            AchievementThresholds.Tiers.kilometers(100, 1_000, 10_000),
-            new AchievementThresholds.Tiers(100, 1_000, 10_000),
-            new AchievementThresholds.Tiers(100, 1_000, 10_000),
-            AchievementThresholds.Tiers.kilometers(100, 1_000, 10_000));
+            new AchievementThresholds.Tiers(10_000, 100_000, 1_000_000, 2_000_000, 5_000_000),
+            new AchievementThresholds.Tiers(10_000, 100_000, 1_000_000, 2_000_000, 5_000_000),
+            AchievementThresholds.Tiers.kilometers(100, 1_000, 10_000, 15_000, 20_000),
+            new AchievementThresholds.Tiers(100, 1_000, 10_000, 20_000, 50_000),
+            new AchievementThresholds.Tiers(100, 1_000, 10_000, 20_000, 50_000),
+            AchievementThresholds.Tiers.kilometers(100, 1_000, 10_000, 15_000, 20_000));
 
     private static PlayerCardProfile profile(String json) {
         return PlayerCardProfile.fromJson(JSONObject.parseObject(json), TEST_THRESHOLDS);
@@ -76,25 +76,54 @@ class PlayerCardProfileTest {
         assertEquals(9, achievement(below, "fish").litSegments());
         assertNull(below.goal());
         PlayerCardProfile first = custom("fish_caught", 100);
-        PlayerCardProfile.Achievement bronze = achievement(first, "fish");
-        assertEquals("铜", bronze.level());
-        assertFalse(bronze.locked());
-        assertEquals("0%", bronze.progressPercentText());
-        assertEquals(0, bronze.litSegments());
-        assertEquals(new PlayerCardProfile.Goal("资深钓客 · 银", 100, 1000, "次", "fish"), first.goal());
-        PlayerCardProfile.Achievement bronzeProgress = achievement(custom("fish_caught", 190), "fish");
-        assertEquals("10%", bronzeProgress.progressPercentText());
-        assertEquals(1, bronzeProgress.litSegments());
-        PlayerCardProfile.Achievement silver = achievement(custom("fish_caught", 1000), "fish");
-        assertEquals("银", silver.level());
-        assertEquals("0%", silver.progressPercentText());
-        PlayerCardProfile.Achievement gold = achievement(custom("fish_caught", 10000), "fish");
+        PlayerCardProfile.Achievement wood = achievement(first, "fish");
+        assertEquals("木", wood.level());
+        assertFalse(wood.locked());
+        assertEquals("0%", wood.progressPercentText());
+        assertEquals(0, wood.litSegments());
+        assertEquals(new PlayerCardProfile.Goal("资深钓客 · 铁", 100, 1000, "次", "fish"), first.goal());
+        PlayerCardProfile.Achievement woodProgress = achievement(custom("fish_caught", 190), "fish");
+        assertEquals("10%", woodProgress.progressPercentText());
+        assertEquals(1, woodProgress.litSegments());
+        PlayerCardProfile.Achievement iron = achievement(custom("fish_caught", 1000), "fish");
+        assertEquals("铁", iron.level());
+        assertEquals("0%", iron.progressPercentText());
+        PlayerCardProfile.Achievement gold = achievement(custom("fish_caught", 50000), "fish");
         assertEquals("金", gold.level());
         assertTrue(gold.isMaxLevel());
         assertEquals("100%", gold.progressPercentText());
         assertEquals(10, gold.litSegments());
-        assertEquals("100%", achievement(custom("fish_caught", 12000), "fish").progressPercentText());
-        assertNull(custom("fish_caught", 12000).goal());
+        assertEquals("100%", achievement(custom("fish_caught", 60000), "fish").progressPercentText());
+        assertNull(custom("fish_caught", 60000).goal());
+    }
+
+    @Test
+    void allFiveTiersTransitionInTheRequestedOrderAtExactThresholds() {
+        long[] thresholds = TEST_THRESHOLDS.fishing().values();
+        String[] levels = {"木", "铁", "铜", "钻", "金"};
+        for (int index = 0; index < thresholds.length; index++) {
+            PlayerCardProfile.Achievement before = achievement(custom("fish_caught", thresholds[index] - 1), "fish");
+            assertEquals(index == 0 ? "未解锁" : levels[index - 1], before.level());
+            assertFalse(before.isMaxLevel());
+            assertEquals(9, before.litSegments());
+            PlayerCardProfile.Achievement reached = achievement(custom("fish_caught", thresholds[index]), "fish");
+            assertEquals(levels[index], reached.level());
+            assertEquals(index == 4, reached.isMaxLevel());
+            assertEquals(index == 4 ? "100%" : "0%", reached.progressPercentText());
+            assertEquals(index == 4 ? 10 : 0, reached.litSegments());
+        }
+    }
+
+    @Test
+    void allElevenSegmentStatesAreAvailableWithinEachNonFinalTier() {
+        for (String level : List.of("未解锁", "木", "铁", "铜", "钻")) {
+            for (int step = 0; step <= 10; step++) {
+                PlayerCardProfile.Achievement progress = new PlayerCardProfile.Achievement(
+                        "test", level, "", "fish", 100 + step * 10, 100, 200);
+                assertEquals(step, progress.litSegments());
+                assertEquals((step * 10) + "%", progress.progressPercentText());
+            }
+        }
     }
 
     @Test
@@ -107,17 +136,17 @@ class PlayerCardProfileTest {
             assertEquals(percentages[i], current.progressPercentText());
             assertEquals(segments[i], current.litSegments());
         }
-        assertEquals("100%", achievement(custom("walk_one_cm", 1_000_000_000), "route").progressPercentText());
-        assertEquals(10, achievement(custom("walk_one_cm", 1_000_000_000), "route").litSegments());
+        assertEquals("100%", achievement(custom("walk_one_cm", 2_000_000_000), "route").progressPercentText());
+        assertEquals(10, achievement(custom("walk_one_cm", 2_000_000_000), "route").litSegments());
     }
 
     @Test
     void progressWithinDistanceTierKeepsCentimeterPrecision() {
-        PlayerCardProfile.Achievement bronze = achievement(custom("walk_one_cm", 10_000_000), "route");
-        assertEquals("铜", bronze.level());
-        assertEquals(10_000_000, bronze.lowerThreshold());
-        assertEquals(100_000_000, bronze.nextThreshold());
-        assertEquals("0%", bronze.progressPercentText());
+        PlayerCardProfile.Achievement wood = achievement(custom("walk_one_cm", 10_000_000), "route");
+        assertEquals("木", wood.level());
+        assertEquals(10_000_000, wood.lowerThreshold());
+        assertEquals(100_000_000, wood.nextThreshold());
+        assertEquals("0%", wood.progressPercentText());
         PlayerCardProfile.Achievement justBelowTenth = achievement(custom("walk_one_cm", 18_999_999), "route");
         assertEquals("9.99%", justBelowTenth.progressPercentText());
         assertEquals(0, justBelowTenth.litSegments());
@@ -131,7 +160,7 @@ class PlayerCardProfileTest {
         PlayerCardProfile next = profile("""
                 {"stats": {"minecraft:custom":{"minecraft:fish_caught":500,"minecraft:traded_with_villager":8479}}}
                 """);
-        assertEquals("贸易伙伴 · 金", next.goal().title());
+        assertEquals("贸易伙伴 · 铜", next.goal().title());
         assertEquals(8479, next.goal().current());
         assertEquals(10000, next.goal().target());
         assertTrue(next.goal().current() < next.goal().target());

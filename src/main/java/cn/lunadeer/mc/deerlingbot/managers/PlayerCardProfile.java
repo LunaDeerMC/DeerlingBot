@@ -20,7 +20,7 @@ public record PlayerCardProfile(long playedTicks, long walkedCentimeters, long m
     public record Achievement(String title, String level, String detail, String icon,
                         long current, long lowerThreshold, long nextThreshold) {
         public Achievement {
-            if (!List.of("未解锁", "铜", "银", "金").contains(level))
+            if (!List.of("未解锁", "木", "铁", "铜", "钻", "金").contains(level))
                 throw new IllegalArgumentException("Unknown achievement level: " + level);
             if (current < 0 || lowerThreshold < 0 || nextThreshold < lowerThreshold
                     || (!"金".equals(level) && nextThreshold == lowerThreshold))
@@ -167,7 +167,7 @@ public record PlayerCardProfile(long playedTicks, long walkedCentimeters, long m
         }
     }
 
-    private static String levelName(int level) { return switch (level) { case 0 -> "未解锁"; case 1 -> "铜"; case 2 -> "银"; default -> "金"; }; }
+    private static String levelName(int level) { return switch (level) { case 0 -> "未解锁"; case 1 -> "木"; case 2 -> "铁"; case 3 -> "铜"; case 4 -> "钻"; case 5 -> "金"; default -> throw new IllegalArgumentException("Unknown achievement level: " + level); }; }
 
     private static void addFavorite(List<Preference> out, JSONObject category, String label, String unit, String icon) {
         if (category == null) return;

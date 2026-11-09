@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarize anonymous vanilla-stat snapshots and propose reviewable achievement thresholds.
 
-This is an offline design aid, not a prediction of when a player first unlocked a
+This is an offline design aid, not a prediction of when a player first unlocked an
 achievement. Online time includes AFK time. Candidate cohorts and quantiles are explicit
 design assumptions; a missing cohort never silently falls back to another cohort.
 Only aggregate statistics are emitted. No player identifiers are required.
@@ -21,7 +21,7 @@ from typing import Any
 INT_MAX = 2_147_483_647
 LONG_MAX = 9_223_372_036_854_775_807
 TICKS_PER_HOUR = 72_000
-TIERS = ("bronze", "silver", "gold")
+TIERS = ("wood", "iron", "copper", "diamond", "gold")
 # Configuration key, source column, source units per configured unit, source cap.
 METRICS = (
     ("mining", "mining", 1, LONG_MAX),
@@ -43,7 +43,11 @@ QUANTILES = (("p10", .10), ("p25", .25), ("p50", .50),
              ("p75", .75), ("p90", .90), ("p95", .95))
 # A longer total playtime need not imply greater involvement in a particular hobby.
 # These uniform floors preserve milestones reached by dedicated shorter-time players.
-CROSS_COHORT_GUARDS = {"silver": (10., 50., .75), "gold": (50., math.inf, .90)}
+CROSS_COHORT_GUARDS = {"copper": (10., 50., .75),
+                       "diamond": (50., math.inf, .80), "gold": (50., math.inf, .95)}
+# Preserve the deliberately raised first-tier difficulty from the previous release.
+ENTRY_FLOORS = {"mining": 500, "crafting": 300, "elytra": 8,
+                "fishing": 5, "trading": 25, "walking": 5}
 
 
 def load_rows(text: str) -> list[dict[str, int]]:
@@ -179,13 +183,19 @@ def per_group_achievement(rows: list[dict[str, int]], column: str, raw_threshold
 
 def combined_achievement(rows: list[dict[str, int]], thresholds: dict[str, dict[str, int]]) -> dict[str, Any]:
     """All six categories are necessary for an honest all-achievements comparison."""
-    at_least_one = sum(any(row[column] >= thresholds[name]["bronze"] * scale
-                          for name, column, scale, _ in METRICS) for row in rows)
-    all_gold = sum(all(row[column] >= thresholds[name]["gold"] * scale
-                       for name, column, scale, _ in METRICS) for row in rows)
+    per_tier = {}
+    for tier in TIERS:
+        count = sum(any(row[column] >= thresholds[name][tier] * scale
+                        for name, column, scale, _ in METRICS) for row in rows)
+        per_tier[tier] = {"count": count, "rate": ratio(count, len(rows))}
+    gold_counts = [sum(row[column] >= thresholds[name]["gold"] * scale
+                       for name, column, scale, _ in METRICS) for row in rows]
+    all_gold = gold_counts.count(len(METRICS))
     return {
         "players": len(rows),
-        "at_least_one_bronze": {"count": at_least_one, "rate": ratio(at_least_one, len(rows))},
+        "at_least_one_by_tier": per_tier,
+        "gold_count_distribution": {str(count): gold_counts.count(count)
+                                    for count in range(len(METRICS) + 1)},
         "all_six_gold": {"count": all_gold, "rate": ratio(all_gold, len(rows))},
     }
 
@@ -205,8 +215,8 @@ def validate_thresholds(thresholds: Any) -> dict[str, dict[str, int]]:
         values = [entry.get(tier) for tier in TIERS]
         if any(type(value) is not int or value <= 0 or value * scale > maximum for value in values):
             raise ValueError(f"{name} thresholds must be positive whole units within the vanilla/stat sum range")
-        if not values[0] < values[1] < values[2]:
-            raise ValueError(f"{name} thresholds must satisfy bronze < silver < gold")
+        if not all(left < right for left, right in zip(values, values[1:])):
+            raise ValueError(f"{name} thresholds must satisfy wood < iron < copper < diamond < gold")
         result[name] = dict(zip(TIERS, values))
     return result
 
@@ -233,7 +243,7 @@ def summarize(rows: list[dict[str, int]], args: argparse.Namespace) -> dict[str,
         for tier in TIERS
     }
     result = {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "offline_candidates_require_review",
         "input_rows": len(rows),
         "assumptions": {
@@ -245,6 +255,7 @@ def summarize(rows: list[dict[str, int]], args: argparse.Namespace) -> dict[str,
                 "design": {tier: {**interval(lower, upper), "positive_participant_quantile": fraction}
                            for tier, (lower, upper, fraction) in CROSS_COHORT_GUARDS.items()},
             },
+            "wood_minimum_thresholds_in_config_units": ENTRY_FLOORS,
             "quantile_method": "linear interpolation at (n - 1) * p",
             "rounding": "two significant digits; whole counts/km; minimum 1",
             "zero_handling": "Zero values remain in overall rates; candidate quantiles use positive participants only.",
@@ -256,7 +267,7 @@ def summarize(rows: list[dict[str, int]], args: argparse.Namespace) -> dict[str,
                 "Candidate time windows and quantiles are design choices, not facts inferred from data.",
                 "Insufficient samples and non-increasing candidates require review; no extrapolation or silent fallback.",
                 "Current cumulative records cannot distinguish AFK, manual play, and automated activity.",
-                "Fixed three-tier lifetime achievements will eventually be completed by sufficiently active players.",
+                "Fixed five-tier lifetime achievements will eventually be completed by sufficiently active players.",
             ],
         },
         "all_players": cohort_summary(rows),
@@ -293,6 +304,10 @@ def summarize(rows: list[dict[str, int]], args: argparse.Namespace) -> dict[str,
                 entry["insufficient_sources"] = insufficient_sources
             else:
                 threshold = readable_threshold(raw, scale)
+                if tier == "wood":
+                    entry["rounded_before_entry_floor"] = threshold
+                    entry["entry_floor"] = ENTRY_FLOORS[name]
+                    threshold = max(threshold, ENTRY_FLOORS[name])
                 entry.update({"unrounded_quantile": json_number(raw, scale),
                               "threshold": threshold, "status": "candidate",
                               "selected_source": selected_source})
@@ -303,8 +318,8 @@ def summarize(rows: list[dict[str, int]], args: argparse.Namespace) -> dict[str,
                     entry["achievement"] = per_group_achievement(rows, column, threshold * scale)
             tiers[tier] = entry
         status = "insufficient_or_invalid_tier"
-        if len(proposed) == 3:
-            if proposed["bronze"] < proposed["silver"] < proposed["gold"]:
+        if len(proposed) == len(TIERS):
+            if all(proposed[left] < proposed[right] for left, right in zip(TIERS, TIERS[1:])):
                 status = "candidate_requires_review"
                 complete[name] = proposed
             else:
@@ -345,26 +360,28 @@ Additional input fields are ignored and are not copied to the output.
 
 Examples:
   python3 tools/calibrate_achievements.py /private/anonymous-stats.json --output /private/summary.json
-  python3 tools/calibrate_achievements.py /private/anonymous-stats.json --gold-hours 200 inf --gold-quantile .9
+  python3 tools/calibrate_achievements.py /private/anonymous-stats.json --gold-hours 800 inf --gold-quantile .9
   python3 tools/calibrate_achievements.py /private/anonymous-stats.json --evaluate-thresholds /private/thresholds.json
-  python3 tools/calibrate_achievements.py /private/anonymous-stats.json --no-cross-cohort-guards --gold-hours 500 inf
+  python3 tools/calibrate_achievements.py /private/anonymous-stats.json --no-cross-cohort-guards
 
 Evaluation thresholds are a JSON object with six keys: mining, crafting, elytra,
-fishing, trading, walking. Each contains integer bronze, silver, gold values.
+fishing, trading, walking. Each contains integer wood, iron, copper, diamond, gold values.
 Distances are whole kilometres; all other thresholds are counts. A top-level
 "achievement-thresholds" wrapper is also accepted. Ranges must be strictly increasing.
 
-The default candidate design was chosen for the 2026-10-30 server snapshot; new
+The default candidate design was chosen for the 2026-11-09 server snapshot; new
 inputs still require review and never change plugin configuration automatically.
-Shipped bronze defaults were subsequently raised after owner feedback. Supply
-the final defaults with --evaluate-thresholds to evaluate that tuned configuration:
-bronze: positive-player Q35 at 1 <= hours < 10;
-silver: max(Q50 at 50 <= hours < 200, Q75 at 10 <= hours < 50);
-gold: max(Q80 at hours >= 300, Q90 at hours >= 50).
-All quantiles use positive participants. At least 20 are required for EACH base
-and guard source. Missing either source prevents a candidate; there is no fallback.
-Use --no-cross-cohort-guards to disable the extra sources. To reproduce the first
-unguarded proposal, also pass --gold-hours 500 inf.
+wood: max(Q50 at 1 <= hours < 10, the previous raised entry threshold);
+iron: Q60 at 10 <= hours < 50;
+copper: max(Q50 at 50 <= hours < 200, Q75 at 10 <= hours < 50);
+diamond: max(Q75 at 200 <= hours < 500, Q80 at hours >= 50);
+gold: max(Q85 at hours >= 500, Q95 at hours >= 50).
+Entry floors are mining 500, crafting 300, elytra 8 km, fishing 5, trading 25,
+walking 5 km. All quantiles use positive participants. At least 20 are required
+for EACH base and guard source. Missing either source prevents a candidate;
+there is no fallback or forced monotonic adjustment.
+Use --no-cross-cohort-guards to disable the extra cohort sources; wood entry
+floors remain explicit and unchanged.
 Rates are fractions in [0, 1]; null means an empty denominator, not zero.
 """)
     command.add_argument("input", help="anonymous JSON/JSONL file; '-' reads standard input")
@@ -374,9 +391,10 @@ Rates are fractions in [0, 1]; null means an empty denominator, not zero.
     command.add_argument("--evaluate-thresholds", type=Path,
                          help="also evaluate a complete threshold configuration JSON")
     command.add_argument("--no-cross-cohort-guards", dest="cross_cohort_guards", action="store_false",
-                         default=True, help="disable silver/gold cross-cohort lower bounds (enabled by default)")
-    defaults = {"bronze": ((1., 10.), .35), "silver": ((50., 200.), .50),
-                "gold": ((300., math.inf), .80)}
+                         default=True, help="disable copper/diamond/gold cross-cohort lower bounds (enabled by default)")
+    defaults = {"wood": ((1., 10.), .50), "iron": ((10., 50.), .60),
+                "copper": ((50., 200.), .50), "diamond": ((200., 500.), .75),
+                "gold": ((500., math.inf), .85)}
     for tier, (hours, quantile) in defaults.items():
         command.add_argument(f"--{tier}-hours", type=float, nargs=2, default=hours,
                              metavar=("MIN", "MAX"), help=f"inclusive minimum/exclusive maximum hours for {tier}; MAX can be inf")
